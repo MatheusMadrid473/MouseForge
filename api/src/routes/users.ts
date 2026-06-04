@@ -10,6 +10,8 @@ type AuthUser = {
   role: string;
 };
 
+type UserRecord = typeof users.$inferSelect;
+
 export async function userRoutes(app: FastifyInstance) {
   async function authenticate(request: FastifyRequest) {
     await request.jwtVerify();
@@ -17,6 +19,26 @@ export async function userRoutes(app: FastifyInstance) {
 
   function canManageUsers(user: AuthUser) {
     return user.role === 'admin' || user.role === 'manager';
+  }
+
+  function isAdmin(user: AuthUser) {
+    return user.role === 'admin';
+  }
+
+  function isMasterUser(user: Pick<UserRecord, 'email' | 'username'>) {
+    const masterEmail = process.env.SUPER_USER_EMAIL?.toLowerCase();
+    const masterUsername = process.env.SUPER_USER_USERNAME?.toLowerCase();
+
+    return user.email.toLowerCase() === masterEmail || (!!user.username && user.username.toLowerCase() === masterUsername);
+  }
+
+  function toSafeUser(user: UserRecord) {
+    const { password: _password, ...safeUser } = user;
+
+    return {
+      ...safeUser,
+      isMaster: isMasterUser(user),
+    };
   }
 
   app.post('/auth/login', async (request, reply) => {
@@ -41,13 +63,7 @@ export async function userRoutes(app: FastifyInstance) {
 
     return {
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-      },
+      user: toSafeUser(user),
     };
   });
 
@@ -81,9 +97,7 @@ export async function userRoutes(app: FastifyInstance) {
       })
       .returning();
 
-    const { password: _password, ...safeUser } = newUser;
-
-    return reply.status(201).send(safeUser);
+    return reply.status(201).send(toSafeUser(newUser));
   });
 
   app.get('/users', { preHandler: authenticate }, async (request, reply) => {
@@ -95,7 +109,7 @@ export async function userRoutes(app: FastifyInstance) {
 
     const userList = await db.select().from(users);
 
-    return userList.map(({ password, ...user }) => user);
+    return userList.map((user) => toSafeUser(user));
   });
 
   app.put('/users/:id', { preHandler: authenticate }, async (request, reply) => {
@@ -130,9 +144,44 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Usuario nao encontrado.' });
     }
 
-    const { password: _password, ...safeUser } = updatedUser;
+    return toSafeUser(updatedUser);
+  });
 
-    return safeUser;
+  app.post('/users/:id/reset-password', { preHandler: authenticate }, async (request, reply) => {
+    const loggedUser = request.user as AuthUser;
+
+    if (!isAdmin(loggedUser)) {
+      return reply.status(403).send({ message: 'Apenas administradores podem redefinir senhas.' });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const resetPasswordSchema = z.object({
+      password: z.string().min(6),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const body = resetPasswordSchema.parse(request.body);
+    const [targetUser] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+    if (!targetUser) {
+      return reply.status(404).send({ message: 'Usuario nao encontrado.' });
+    }
+
+    if (isMasterUser(targetUser) && targetUser.id !== loggedUser.id) {
+      return reply.status(403).send({ message: 'A senha do usuario mestre nao pode ser redefinida por outro usuario.' });
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        password: hashPassword(body.password),
+        updatedAt: new Date(),
+        updatedBy: loggedUser.id,
+      })
+      .where(eq(users.id, id))
+      .returning();
+
+    return toSafeUser(updatedUser);
   });
 
   app.delete('/users/:id', { preHandler: authenticate }, async (request, reply) => {
@@ -146,6 +195,16 @@ export async function userRoutes(app: FastifyInstance) {
 
     if (id === loggedUser.id) {
       return reply.status(400).send({ message: 'O usuario logado nao pode remover a propria conta.' });
+    }
+
+    const [targetUser] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+    if (!targetUser) {
+      return reply.status(404).send({ message: 'Usuario nao encontrado.' });
+    }
+
+    if (isMasterUser(targetUser)) {
+      return reply.status(400).send({ message: 'O usuario mestre nao pode ser removido.' });
     }
 
     await db.delete(users).where(eq(users.id, id));

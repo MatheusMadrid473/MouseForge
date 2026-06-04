@@ -8,6 +8,7 @@ import {
   CreditCard,
   Edit,
   FileText,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -15,7 +16,9 @@ import {
   Plus,
   ReceiptText,
   Save,
+  Search,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Store,
   Sun,
@@ -36,6 +39,7 @@ type LoggedUser = {
   email?: string;
   username?: string;
   role?: UserRole;
+  isMaster?: boolean;
 };
 
 type UserRole = 'admin' | 'manager' | 'cashier';
@@ -48,6 +52,7 @@ type SystemUser = {
   username?: string | null;
   role: UserRole;
   createdAt: string;
+  isMaster?: boolean;
 };
 
 type UserFormState = {
@@ -260,17 +265,17 @@ const previewConfigs: Record<PreviewView, PreviewConfig> = {
   settings: {
     title: 'Configuracoes',
     eyebrow: 'Parametros da loja',
-    description: 'Previa das preferencias do PDV, loja, fiscal, numeracao, permissoes e integracoes.',
+    description: 'Previa das preferencias do PDV, empresa, filial, fiscal, termos de uso, permissoes e integracoes.',
     primaryAction: 'Salvar parametros',
     metrics: [
-      { label: 'Loja ativa', value: 'Matriz', helper: 'Ambiente producao' },
+      { label: 'Empresa ativa', value: 'Matriz', helper: 'Ambiente producao' },
       { label: 'Serie NFC-e', value: '001', helper: 'Numeracao atual' },
-      { label: 'Tema padrao', value: 'Sistema', helper: 'Usuario pode alterar' },
+      { label: 'Termos vigentes', value: '1', helper: 'Aceite obrigatorio' },
     ],
     rows: [
-      { title: 'Dados da loja', detail: 'CNPJ, razao social, endereco e contatos', status: 'Pendente' },
+      { title: 'Empresa e filial', detail: 'CNPJ, razao social, lojas, endereco e isolamento por unidade', status: 'Pendente' },
       { title: 'Fiscal', detail: 'CSC, certificado, serie e ambiente', status: 'Previa' },
-      { title: 'Permissoes', detail: 'Regras por cargo para operacoes sensiveis', status: 'Previa' },
+      { title: 'Termos e LGPD', detail: 'Cadastro de termos, versoes e aceite individual por usuario', status: 'Previa' },
     ],
   },
 };
@@ -495,6 +500,10 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState<UserFormState>(emptyUserForm);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deleteCandidate, setDeleteCandidate] = useState<SystemUser | null>(null);
+  const [resetCandidate, setResetCandidate] = useState<SystemUser | null>(null);
+  const [newPassword, setNewPassword] = useState('');
   const isEditing = !!form.id;
 
   const { data: users = [], isLoading } = useQuery<SystemUser[]>({
@@ -549,6 +558,21 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
     },
   });
 
+  const resetPassword = useMutation({
+    mutationFn: async ({ id, password }: { id: string; password: string }) => {
+      const response = await api.post(`/users/${id}/reset-password`, { password });
+      return response.data;
+    },
+    onSuccess: () => {
+      setResetCandidate(null);
+      setNewPassword('');
+      toast.success('Senha redefinida com sucesso.');
+    },
+    onError: () => {
+      toast.error('Nao foi possivel redefinir a senha deste usuario.');
+    },
+  });
+
   const openCreateModal = () => {
     setForm(emptyUserForm);
     setIsModalOpen(true);
@@ -583,24 +607,52 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
   };
 
   const managerAllowed = canManageUsers(loggedUser.role);
+  const adminAllowed = loggedUser.role === 'admin';
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredUsers = useMemo(() => {
+    if (!normalizedSearch) {
+      return users;
+    }
+
+    const terms = normalizedSearch.split(/\s+/).filter(Boolean);
+
+    return users.filter((user) => {
+      const searchableText = [user.name, user.email, user.username, roleLabels[user.role], user.isMaster ? 'mestre master' : '']
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return terms.every((term) => searchableText.includes(term));
+    });
+  }, [normalizedSearch, users]);
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">Configurador</p>
-          <h2 className="mt-2 text-2xl font-extrabold text-slate-950 dark:text-white">Usuarios do sistema</h2>
+          <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Usuarios do sistema</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Controle operadores, gerentes e administradores do PDV.</p>
         </div>
-        <button
-          type="button"
-          onClick={openCreateModal}
-          disabled={!managerAllowed}
-          className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-800"
-        >
-          <Plus size={18} />
-          Novo usuario
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white sm:w-72"
+              placeholder="Pesquisar nome, usuario, cargo..."
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openCreateModal}
+            disabled={!managerAllowed}
+            className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-800"
+          >
+            <Plus size={18} />
+            Novo usuario
+          </button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -623,11 +675,25 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
                     Carregando usuarios...
                   </td>
                 </tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={6}>
+                    Nenhum usuario encontrado para a pesquisa.
+                  </td>
+                </tr>
               ) : (
-                users.map((user) => (
+                filteredUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                     <td className="px-5 py-4">
-                      <p className="font-bold text-slate-950 dark:text-white">{user.name}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-slate-950 dark:text-white">{user.name}</p>
+                        {user.isMaster && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-brand-600/10 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                            <ShieldCheck size={12} />
+                            Mestre
+                          </span>
+                        )}
+                      </div>
                       {user.id === loggedUser.id && <p className="text-xs text-brand-600 dark:text-brand-400">Usuario logado</p>}
                     </td>
                     <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{user.username ? `@${user.username}` : '-'}</td>
@@ -651,8 +717,20 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteUser.mutate(user.id)}
-                          disabled={!managerAllowed || user.id === loggedUser.id || deleteUser.isPending}
+                          onClick={() => {
+                            setResetCandidate(user);
+                            setNewPassword('');
+                          }}
+                          disabled={!adminAllowed || (user.isMaster && user.id !== loggedUser.id)}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-amber-500/10 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-amber-300"
+                          title="Redefinir senha"
+                        >
+                          <KeyRound size={17} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteCandidate(user)}
+                          disabled={!managerAllowed || user.id === loggedUser.id || user.isMaster || deleteUser.isPending}
                           className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-red-300"
                           title="Remover usuario"
                         >
@@ -767,6 +845,119 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
           </form>
         </div>
       )}
+
+      {deleteCandidate && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 px-4 py-6">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-950 dark:text-white">Confirmar exclusao</h3>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  Voce esta removendo <strong className="text-slate-800 dark:text-slate-200">{deleteCandidate.name}</strong>. Esta acao nao pode ser desfeita.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteCandidate(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteCandidate(null)}
+                className="min-h-[44px] rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteUser.mutate(deleteCandidate.id);
+                  setDeleteCandidate(null);
+                }}
+                disabled={deleteUser.isPending}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+              >
+                <Trash2 size={17} />
+                Remover usuario
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetCandidate && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 px-4 py-6">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (newPassword.length < 6) {
+                toast.error('A nova senha deve ter pelo menos 6 caracteres.');
+                return;
+              }
+
+              resetPassword.mutate({ id: resetCandidate.id, password: newPassword });
+            }}
+            className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-950 dark:text-white">Redefinir senha</h3>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  Defina uma nova senha para <strong className="text-slate-800 dark:text-slate-200">{resetCandidate.name}</strong>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetCandidate(null);
+                  setNewPassword('');
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <label className="mt-5 grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Nova senha
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                placeholder="Minimo 6 caracteres"
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setResetCandidate(null);
+                  setNewPassword('');
+                }}
+                className="min-h-[44px] rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={resetPassword.isPending}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+              >
+                <KeyRound size={17} />
+                {resetPassword.isPending ? 'Redefinindo...' : 'Redefinir'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
@@ -791,9 +982,6 @@ export function Home() {
     localStorage.removeItem('mouseforge:user');
     window.location.href = '/';
   };
-
-  const activeMenuItem = visibleMenuSections.flatMap((section) => section.items).find((item) => item.id === activeView);
-  const ActiveIcon = activeMenuItem?.icon || LayoutDashboard;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
@@ -859,19 +1047,17 @@ export function Home() {
 
       <main className="lg:pl-64">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">
-                <ActiveIcon size={16} />
-                {activeMenuItem?.label || 'Dashboard'}
+          <header className={`mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${activeView !== 'dashboard' ? 'md:justify-end' : ''}`}>
+            {activeView === 'dashboard' && (
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">
+                  <LayoutDashboard size={16} />
+                  Painel de gestao
+                </div>
+                <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">Ola, {firstName}</h1>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Status em tempo real das operacoes do mercado</p>
               </div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">
-                {activeView === 'dashboard' ? `Ola, ${firstName}` : activeMenuItem?.label}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {activeView === 'dashboard' ? 'Status em tempo real das operacoes do mercado' : 'Configure e acompanhe os recursos do MouseForge'}
-              </p>
-            </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3">
               <button
