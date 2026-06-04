@@ -90,9 +90,12 @@ function syncVersion(version) {
 
 const messageFileIndex = process.argv.indexOf('--message-file');
 const messageFile = messageFileIndex >= 0 ? process.argv[messageFileIndex + 1] : undefined;
+const sourceIndex = process.argv.indexOf('--source');
+const source = sourceIndex >= 0 ? process.argv[sourceIndex + 1] : undefined;
 const currentVersion = readVersion();
 const message = messageFile && fs.existsSync(messageFile) ? fs.readFileSync(messageFile, 'utf8').trim() : '';
-const nextVersion = bumpVersion(currentVersion, message ? detectBump(message) : 'none');
+const shouldSkipBump = source === 'commit' || source === 'merge' || source === 'squash';
+const nextVersion = shouldSkipBump ? currentVersion : bumpVersion(currentVersion, message ? detectBump(message) : 'none');
 
 syncVersion(nextVersion);
 console.log(`MouseForge version ${currentVersion} -> ${nextVersion}`);

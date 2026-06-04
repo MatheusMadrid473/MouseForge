@@ -203,6 +203,14 @@ type PeriodReport = {
 
 type PaymentMethod = 'pix' | 'debit' | 'credit' | 'cash' | 'voucher' | 'mixed';
 
+type ProductImportRow = Record<string, string | number | null>;
+
+type ProductImportResult = {
+  requested: number;
+  imported: number;
+  errors: Array<{ line: number; code: string; message: string }>;
+};
+
 type UserFormState = {
   id?: string;
   name: string;
@@ -672,6 +680,8 @@ function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ name: '', barcode: '', category: '', unit: 'un', salePrice: '', costPrice: '', minStock: '0', currentStock: '0', ncm: '', companyId: loggedUser.companyId || '', branchId: loggedUser.branchId || '' });
+  const [importResult, setImportResult] = useState<ProductImportResult | null>(null);
+  const [importMessage, setImportMessage] = useState('');
 
   const { data: productsList = [] } = useQuery<Product[]>({
     queryKey: ['products', search],
@@ -706,12 +716,60 @@ function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
     onError: () => toast.error('Nao foi possivel salvar o produto.'),
   });
 
+  const readImportFile = async (file: File) => {
+    const XLSX = await import('xlsx');
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const workbook =
+      extension === 'xlsx' || extension === 'xls'
+        ? XLSX.read(await file.arrayBuffer(), { type: 'array' })
+        : XLSX.read(await file.text(), { type: 'string' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json<ProductImportRow>(firstSheet, { defval: '' });
+  };
+
   const importProducts = async (file?: File) => {
-    if (!file) return;
-    const csv = await file.text();
-    await api.post('/products/import', { csv, companyId: form.companyId || undefined, branchId: form.branchId || undefined });
-    queryClient.invalidateQueries({ queryKey: ['products'] });
-    toast.success('Importacao concluida.');
+    if (!file) {
+      return;
+    }
+
+    if (loggedUser.isMaster && !form.companyId && !loggedUser.companyId) {
+      toast.error('Selecione a empresa antes de importar produtos.');
+      return;
+    }
+
+    setImportResult(null);
+    setImportMessage('Lendo planilha...');
+
+    try {
+      const productsToImport = await readImportFile(file);
+
+      if (productsToImport.length === 0) {
+        setImportMessage('');
+        toast.error('A planilha nao possui produtos para importar.');
+        return;
+      }
+
+      setImportMessage(`Importando ${productsToImport.length} produtos...`);
+      const response = await api.post<ProductImportResult>('/products/import', {
+        products: productsToImport,
+        companyId: form.companyId || undefined,
+        branchId: form.branchId || undefined,
+      });
+
+      setImportResult(response.data);
+      setImportMessage('');
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+
+      if (response.data.errors.length > 0) {
+        toast.warning(`${response.data.imported} produtos importados, ${response.data.errors.length} com erro.`);
+      } else {
+        toast.success(`${response.data.imported} produtos importados.`);
+      }
+    } catch (error) {
+      setImportMessage('');
+      toast.error('Nao foi possivel importar a planilha.');
+    }
   };
 
   const exportProducts = async () => {
@@ -730,7 +788,7 @@ function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
           <label className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 dark:border-slate-800 dark:text-slate-200">
             <Upload size={17} />
             Importar CSV
-            <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => importProducts(event.target.files?.[0])} />
+            <input type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="hidden" onChange={(event) => importProducts(event.target.files?.[0])} />
           </label>
           <button type="button" onClick={exportProducts} className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 dark:border-slate-800 dark:text-slate-200">
             <Download size={17} />
@@ -738,6 +796,27 @@ function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
           </button>
         </div>
       </div>
+
+      {(importMessage || importResult) && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          {importMessage && <p className="text-sm font-bold text-brand-600 dark:text-brand-300">{importMessage}</p>}
+          {importResult && (
+            <div className="space-y-3">
+              <p className="text-sm font-bold text-slate-950 dark:text-white">
+                {importResult.imported} de {importResult.requested} produtos importados.
+              </p>
+              {importResult.errors.length > 0 && (
+                <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                  <p className="font-bold">Produtos com erro na importacao:</p>
+                  <p className="mt-1">
+                    {importResult.errors.map((item) => `${item.code} (${item.message})`).join(', ')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <form
         onSubmit={(event) => {

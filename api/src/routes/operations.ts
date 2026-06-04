@@ -110,6 +110,25 @@ function parseCsv(text: string) {
     });
 }
 
+function parseImportNumber(value: unknown) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  return Number(String(value || '0').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
+}
+
+function getImportValue(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
 export async function operationRoutes(app: FastifyInstance) {
   async function authenticate(request: FastifyRequest) {
     await request.jwtVerify();
@@ -409,7 +428,29 @@ export async function operationRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Sem permissao para importar produtos.' });
     }
 
-    const body = z.object({ companyId: z.string().uuid().optional(), branchId: z.string().uuid().nullable().optional(), csv: z.string().min(1) }).parse(request.body);
+    const importRowSchema = z
+      .record(z.string(), z.unknown())
+      .transform((row) => ({
+        name: String(getImportValue(row, ['nome', 'name'])).trim(),
+        barcode: String(getImportValue(row, ['codigo_barras', 'barcode', 'codigo', 'ean'])).trim(),
+        sku: String(getImportValue(row, ['sku', 'codigo_interno'])).trim(),
+        category: String(getImportValue(row, ['categoria', 'category'])).trim(),
+        unit: String(getImportValue(row, ['unidade', 'unit'])).trim() || 'un',
+        salePriceCents: Math.round(parseImportNumber(getImportValue(row, ['preco_venda', 'salePrice', 'preco'])) * 100),
+        costPriceCents: Math.round(parseImportNumber(getImportValue(row, ['preco_custo', 'costPrice', 'custo'])) * 100),
+        minStock: Math.max(0, Math.round(parseImportNumber(getImportValue(row, ['estoque_minimo', 'minStock', 'minimo'])))),
+        currentStock: Math.max(0, Math.round(parseImportNumber(getImportValue(row, ['estoque_atual', 'currentStock', 'estoque'])))),
+        ncm: String(getImportValue(row, ['ncm'])).trim(),
+      }));
+    const body = z
+      .object({
+        companyId: z.string().uuid().optional(),
+        branchId: z.string().uuid().nullable().optional(),
+        csv: z.string().optional(),
+        products: z.array(importRowSchema).optional(),
+      })
+      .refine((payload) => payload.csv || (payload.products && payload.products.length > 0), { message: 'Envie CSV ou produtos para importar.' })
+      .parse(request.body);
     const companyId = scope.isMaster ? body.companyId || scope.companyId : scope.companyId;
     const branchId = scope.user.branchId || body.branchId || scope.branchId;
 
@@ -417,37 +458,52 @@ export async function operationRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Informe a empresa da importacao.' });
     }
 
-    const rows = parseCsv(body.csv);
+    await assertBranchInCompany(companyId, branchId);
+    const rows = body.products || (body.csv ? parseCsv(body.csv).map((row) => importRowSchema.parse(row)) : []);
     const inserted = [];
-    for (const row of rows) {
-      if (!row.nome && !row.name) {
+    const errors: Array<{ line: number; code: string; message: string }> = [];
+
+    for (const [index, row] of rows.entries()) {
+      const code = row.barcode || row.sku || `linha ${index + 2}`;
+
+      if (!row.name) {
+        errors.push({ line: index + 2, code, message: 'Nome do produto nao informado.' });
         continue;
       }
 
-      const [product] = await db
-        .insert(products)
-        .values({
-          companyId,
-          branchId,
-          name: String(row.nome || row.name),
-          barcode: String(row.codigo_barras || row.barcode || ''),
-          sku: String(row.sku || ''),
-          category: String(row.categoria || row.category || ''),
-          unit: String(row.unidade || row.unit || 'un'),
-          salePriceCents: Math.round(Number(row.preco_venda || row.salePrice || 0) * 100),
-          costPriceCents: Math.round(Number(row.preco_custo || row.costPrice || 0) * 100),
-          minStock: Number(row.estoque_minimo || row.minStock || 0),
-          currentStock: Number(row.estoque_atual || row.currentStock || 0),
-          ncm: String(row.ncm || ''),
-          createdBy: scope.user.id,
-          updatedBy: scope.user.id,
-        })
-        .returning();
-      inserted.push(product);
+      if (row.salePriceCents <= 0) {
+        errors.push({ line: index + 2, code, message: 'Preco de venda deve ser maior que zero.' });
+        continue;
+      }
+
+      try {
+        const [product] = await db
+          .insert(products)
+          .values({
+            companyId,
+            branchId,
+            name: row.name,
+            barcode: row.barcode || null,
+            sku: row.sku || null,
+            category: row.category || null,
+            unit: row.unit,
+            salePriceCents: row.salePriceCents,
+            costPriceCents: row.costPriceCents,
+            minStock: row.minStock,
+            currentStock: row.currentStock,
+            ncm: row.ncm || null,
+            createdBy: scope.user.id,
+            updatedBy: scope.user.id,
+          })
+          .returning();
+        inserted.push(product);
+      } catch {
+        errors.push({ line: index + 2, code, message: 'Erro ao gravar produto no banco.' });
+      }
     }
 
-    await writeAudit({ user: scope.user, action: 'import', entity: 'product', companyId, branchId, summary: `${inserted.length} produtos importados` });
-    return { imported: inserted.length };
+    await writeAudit({ user: scope.user, action: 'import', entity: 'product', companyId, branchId, summary: `${inserted.length} produtos importados; ${errors.length} erros` });
+    return { requested: rows.length, imported: inserted.length, errors };
   });
 
   app.get('/products/export', { preHandler: authenticate }, async (request, reply) => {

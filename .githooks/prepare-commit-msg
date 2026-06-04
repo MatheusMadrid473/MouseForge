@@ -1,2 +1,2 @@
 #!/bin/sh
-node scripts/update-version.cjs --message-file "$1"
+node scripts/update-version.cjs --message-file "$1" --source "$2"
