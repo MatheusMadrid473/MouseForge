@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { userRoutes } from './routes/users';
 import { ensureSuperUser } from './bootstrap/super-user';
+import { ensureUserSchema } from './bootstrap/user-schema';
 import 'dotenv/config';
 
 const app = Fastify({
@@ -22,6 +23,7 @@ app.register(userRoutes);
 const start = async () => {
   try {
     const port = Number(process.env.PORT) || 3333;
+    await ensureUserSchema();
     await ensureSuperUser();
     await app.listen({ port, host: '0.0.0.0' });
     console.log(`Server running at http://localhost:${port}`);
