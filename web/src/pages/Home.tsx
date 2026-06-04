@@ -42,6 +42,8 @@ type LoggedUser = {
   username?: string;
   role?: UserRole;
   isMaster?: boolean;
+  companyId?: string | null;
+  branchId?: string | null;
 };
 
 type UserRole = 'admin' | 'manager' | 'cashier';
@@ -67,6 +69,8 @@ type SystemUser = {
   role: UserRole;
   createdAt: string;
   isMaster?: boolean;
+  companyId?: string | null;
+  branchId?: string | null;
 };
 
 type Company = {
@@ -92,6 +96,22 @@ type LegalTerm = {
   isActive: boolean;
 };
 
+type TermAcceptanceUser = {
+  id: string;
+  name: string;
+  email: string;
+  username?: string | null;
+  role: UserRole;
+  companyId?: string | null;
+  branchId?: string | null;
+  acceptedAt?: string | null;
+};
+
+type TermAcceptanceReport = {
+  term: LegalTerm;
+  users: TermAcceptanceUser[];
+};
+
 type UserFormState = {
   id?: string;
   name: string;
@@ -99,6 +119,8 @@ type UserFormState = {
   username: string;
   password: string;
   role: UserRole;
+  companyId: string;
+  branchId: string;
 };
 
 type PreviewView = Exclude<ActiveView, 'dashboard' | 'users' | 'companies' | 'terms'>;
@@ -123,6 +145,8 @@ const emptyUserForm: UserFormState = {
   username: '',
   password: '',
   role: 'cashier',
+  companyId: '',
+  branchId: '',
 };
 
 const roleLabels: Record<UserRole, string> = {
@@ -553,6 +577,24 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
     },
   });
 
+  const { data: companies = [] } = useQuery<Company[]>({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      const response = await api.get('/companies');
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster,
+  });
+
+  const { data: branches = [] } = useQuery<Branch[]>({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const response = await api.get('/branches');
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster,
+  });
+
   const saveUser = useMutation({
     mutationFn: async (payload: UserFormState) => {
       if (payload.id) {
@@ -560,6 +602,8 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
           name: payload.name,
           username: payload.username,
           role: payload.role,
+          companyId: payload.companyId || null,
+          branchId: payload.branchId || null,
         });
         return response.data;
       }
@@ -570,6 +614,8 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
         username: payload.username,
         password: payload.password,
         role: payload.role,
+        companyId: payload.companyId || undefined,
+        branchId: payload.branchId || undefined,
       });
       return response.data;
     },
@@ -625,6 +671,8 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
       username: user.username || '',
       password: '',
       role: user.role,
+      companyId: user.companyId || '',
+      branchId: user.branchId || '',
     });
     setIsModalOpen(true);
   };
@@ -642,6 +690,11 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
       return;
     }
 
+    if (loggedUser.isMaster && form.role !== 'admin' && !form.companyId) {
+      toast.error('Informe a empresa do usuario.');
+      return;
+    }
+
     saveUser.mutate(form);
   };
 
@@ -656,14 +709,16 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
     const terms = normalizedSearch.split(/\s+/).filter(Boolean);
 
     return users.filter((user) => {
-      const searchableText = [user.name, user.email, user.username, roleLabels[user.role], user.isMaster ? 'mestre master' : '']
+      const companyName = companies.find((company) => company.id === user.companyId)?.name;
+      const branchName = branches.find((branch) => branch.id === user.branchId)?.name;
+      const searchableText = [user.name, user.email, user.username, roleLabels[user.role], companyName, branchName, user.isMaster ? 'mestre master' : '']
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
 
       return terms.every((term) => searchableText.includes(term));
     });
-  }, [normalizedSearch, users]);
+  }, [branches, companies, normalizedSearch, users]);
 
   return (
     <section className="space-y-6">
@@ -702,6 +757,7 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
                 <th className="px-5 py-4">Nome</th>
                 <th className="px-5 py-4">Usuario</th>
                 <th className="px-5 py-4">E-mail</th>
+                <th className="px-5 py-4">Empresa/filial</th>
                 <th className="px-5 py-4">Cargo</th>
                 <th className="px-5 py-4">Criado em</th>
                 <th className="px-5 py-4 text-right">Acoes</th>
@@ -710,13 +766,13 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
             <tbody className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
               {isLoading ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={6}>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={7}>
                     Carregando usuarios...
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={6}>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={7}>
                     Nenhum usuario encontrado para a pesquisa.
                   </td>
                 </tr>
@@ -737,6 +793,10 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
                     </td>
                     <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{user.username ? `@${user.username}` : '-'}</td>
                     <td className="px-5 py-4 text-slate-600 dark:text-slate-300">{user.email}</td>
+                    <td className="px-5 py-4 text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">{companies.find((company) => company.id === user.companyId)?.name || '-'}</p>
+                      <p className="text-xs text-slate-500">{branches.find((branch) => branch.id === user.branchId)?.name || 'Todas as filiais'}</p>
+                    </td>
                     <td className="px-5 py-4">
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                         {roleLabels[user.role]}
@@ -862,6 +922,47 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
                   <option value="cashier">Caixa</option>
                 </select>
               </label>
+
+              {loggedUser.isMaster && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Empresa
+                    <select
+                      value={form.companyId}
+                      onChange={(event) => setForm((current) => ({ ...current, companyId: event.target.value, branchId: '' }))}
+                      className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="">Sem empresa</option>
+                      {companies
+                        .filter((company) => company.isActive)
+                        .map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Filial
+                    <select
+                      value={form.branchId}
+                      onChange={(event) => setForm((current) => ({ ...current, branchId: event.target.value }))}
+                      disabled={!form.companyId}
+                      className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="">Todas as filiais</option>
+                      {branches
+                        .filter((branch) => branch.isActive && branch.companyId === form.companyId)
+                        .map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -1227,6 +1328,7 @@ function CompaniesView({ loggedUser }: { loggedUser: LoggedUser }) {
 function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ id: '', title: '', version: '', content: '' });
+  const [selectedTermId, setSelectedTermId] = useState('');
 
   const { data: termsList = [] } = useQuery<LegalTerm[]>({
     queryKey: ['terms'],
@@ -1235,6 +1337,21 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
       return response.data;
     },
     enabled: !!loggedUser.isMaster,
+  });
+
+  useEffect(() => {
+    if (!selectedTermId && termsList.length > 0) {
+      setSelectedTermId(termsList.find((term) => term.isActive)?.id || termsList[0].id);
+    }
+  }, [selectedTermId, termsList]);
+
+  const { data: acceptanceReport, isLoading: isLoadingAcceptances } = useQuery<TermAcceptanceReport>({
+    queryKey: ['term-acceptances', selectedTermId],
+    queryFn: async () => {
+      const response = await api.get(`/terms/${selectedTermId}/acceptances`);
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster && !!selectedTermId,
   });
 
   const saveTerm = useMutation({
@@ -1257,6 +1374,7 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['terms'] });
+      queryClient.invalidateQueries({ queryKey: ['term-acceptances'] });
       setForm({ id: '', title: '', version: '', content: '' });
       toast.success('Termo salvo com sucesso.');
     },
@@ -1264,8 +1382,15 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
 
   const toggleTerm = useMutation({
     mutationFn: async (term: LegalTerm) => api.put(`/terms/${term.id}`, { isActive: !term.isActive }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['terms'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['terms'] });
+      queryClient.invalidateQueries({ queryKey: ['term-acceptances'] });
+    },
   });
+
+  const acceptanceUsers = acceptanceReport?.users || [];
+  const acceptedUsers = acceptanceUsers.filter((user) => user.acceptedAt);
+  const pendingUsers = acceptanceUsers.filter((user) => !user.acceptedAt);
 
   if (!loggedUser.isMaster) {
     return <PreviewView view="settings" />;
@@ -1326,6 +1451,92 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-bold text-slate-950 dark:text-white">Aceites dos usuarios</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Auditoria de quem aceitou ou ainda precisa aceitar o termo selecionado.</p>
+          </div>
+          <select
+            value={selectedTermId}
+            onChange={(event) => setSelectedTermId(event.target.value)}
+            className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+          >
+            {termsList.map((term) => (
+              <option key={term.id} value={term.id}>
+                {term.title} v{term.version}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-3 px-5 py-4 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Usuarios</p>
+            <p className="mt-2 text-2xl font-extrabold text-slate-950 dark:text-white">{acceptanceUsers.length}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Aceitaram</p>
+            <p className="mt-2 text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">{acceptedUsers.length}</p>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Pendentes</p>
+            <p className="mt-2 text-2xl font-extrabold text-amber-700 dark:text-amber-300">{pendingUsers.length}</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead>
+              <tr className="border-y border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                <th className="px-5 py-4">Usuario</th>
+                <th className="px-5 py-4">Cargo</th>
+                <th className="px-5 py-4">Status</th>
+                <th className="px-5 py-4">Aceito em</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+              {isLoadingAcceptances ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={4}>
+                    Carregando aceites...
+                  </td>
+                </tr>
+              ) : acceptanceUsers.length === 0 ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={4}>
+                    Nenhum usuario encontrado para auditoria.
+                  </td>
+                </tr>
+              ) : (
+                acceptanceUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                    <td className="px-5 py-4">
+                      <p className="font-bold text-slate-950 dark:text-white">{user.name}</p>
+                      <p className="text-xs text-slate-500">{user.username ? `@${user.username}` : user.email}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        {roleLabels[user.role]}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.acceptedAt ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'}`}>
+                        <FileCheck2 size={14} />
+                        {user.acceptedAt ? 'Aceito' : 'Pendente'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
+                      {user.acceptedAt ? new Date(user.acceptedAt).toLocaleString('pt-BR') : '-'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>

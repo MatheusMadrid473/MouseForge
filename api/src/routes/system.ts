@@ -209,6 +209,37 @@ export async function systemRoutes(app: FastifyInstance) {
     return term;
   });
 
+  app.get('/terms/:id/acceptances', { preHandler: authenticate }, async (request, reply) => {
+    await requireMaster(request);
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const [term] = await db.select().from(terms).where(eq(terms.id, id)).limit(1);
+
+    if (!term) {
+      return reply.status(404).send({ message: 'Termo nao encontrado.' });
+    }
+
+    const [userList, acceptanceList] = await Promise.all([
+      db.select().from(users),
+      db.select().from(termAcceptances).where(eq(termAcceptances.termId, id)),
+    ]);
+    const acceptedAtByUser = new Map(acceptanceList.map((acceptance) => [acceptance.userId, acceptance.acceptedAt]));
+
+    return {
+      term,
+      users: userList.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        companyId: user.companyId,
+        branchId: user.branchId,
+        acceptedAt: acceptedAtByUser.get(user.id) ?? null,
+      })),
+    };
+  });
+
   app.get('/terms/pending', { preHandler: authenticate }, async (request) => {
     const authUser = request.user as AuthUser;
     const activeTerms = await db.select().from(terms).where(eq(terms.isActive, true));

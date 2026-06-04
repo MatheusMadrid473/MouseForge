@@ -7,6 +7,8 @@ export const users = pgTable('users', {
   username: text('username').unique(),
   password: text('password').notNull(),
   role: text('role', { enum: ['admin', 'manager', 'cashier'] }).default('cashier').notNull(),
+  companyId: uuid('company_id'),
+  branchId: uuid('branch_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   createdBy: uuid('created_by'),
