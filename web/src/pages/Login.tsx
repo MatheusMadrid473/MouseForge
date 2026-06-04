@@ -5,31 +5,46 @@ import { api } from '../lib/api';
 import { useTheme } from '../hooks/useTheme';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { Sun, Moon, Store, Lock, Mail } from 'lucide-react';
+import { Sun, Moon, Store, Lock, Mail, ShieldCheck } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Insira um e-mail valido'),
   password: z.string().min(6, 'A senha deve conter no minimo 6 caracteres'),
+  remember: z.boolean().optional(),
 });
 
 type LoginData = z.infer<typeof loginSchema>;
 
 export function Login() {
   const { theme, toggleTheme } = useTheme();
+  const savedEmail = localStorage.getItem('mouseforge:remember-email') || '';
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: savedEmail,
+      remember: !!savedEmail,
+    },
   });
 
   const { mutateAsync: loginMutation, isPending } = useMutation({
     mutationFn: async (data: LoginData) => {
-      const response = await api.post('/auth/login', data);
-      return response.data;
+      const response = await api.post('/auth/login', {
+        email: data.email,
+        password: data.password,
+      });
+      return { ...response.data, remember: data.remember };
     },
     onSuccess: (data) => {
+      if (data.remember) {
+        localStorage.setItem('mouseforge:remember-email', data.user.email);
+      } else {
+        localStorage.removeItem('mouseforge:remember-email');
+      }
+
       localStorage.setItem('mouseforge:token', data.token);
       localStorage.setItem('mouseforge:user', JSON.stringify(data.user));
       toast.success(`Acesso autorizado! Bem-vindo, ${data.user.name}.`);
@@ -41,7 +56,7 @@ export function Login() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 relative sm:py-12 transition-colors duration-200">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 px-4 relative sm:py-12 transition-colors duration-200">
       <button
         type="button"
         onClick={toggleTheme}
@@ -51,7 +66,7 @@ export function Login() {
         {theme === 'dark' ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} />}
       </button>
 
-      <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800">
+      <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800">
         <div className="text-center mb-8">
           <div className="mx-auto w-12 h-12 bg-brand-600/10 dark:bg-brand-600/20 rounded-xl flex items-center justify-center mb-4">
             <Store className="text-brand-600 dark:text-brand-500" size={24} />
@@ -69,6 +84,7 @@ export function Login() {
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
               <input
                 type="email"
+                autoComplete="username"
                 {...register('email')}
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-600 transition-all text-base min-h-[44px]"
                 placeholder="admin@mouseforge.local"
@@ -83,6 +99,7 @@ export function Login() {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
               <input
                 type="password"
+                autoComplete="current-password"
                 {...register('password')}
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-600 transition-all text-base min-h-[44px]"
                 placeholder="********"
@@ -90,6 +107,18 @@ export function Login() {
             </div>
             {errors.password && <p className="text-red-500 dark:text-red-400 text-xs mt-1.5 font-medium">{errors.password.message}</p>}
           </div>
+
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+            <span className="flex items-center gap-2 font-medium">
+              <ShieldCheck size={17} className="text-brand-600 dark:text-brand-500" />
+              Lembrar acesso
+            </span>
+            <input
+              type="checkbox"
+              {...register('remember')}
+              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-600"
+            />
+          </label>
 
           <button
             type="submit"
