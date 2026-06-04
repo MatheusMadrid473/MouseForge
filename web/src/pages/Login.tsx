@@ -48,6 +48,7 @@ export function Login() {
 
       localStorage.setItem('mouseforge:token', data.token);
       localStorage.setItem('mouseforge:user', JSON.stringify(data.user));
+      localStorage.setItem('mouseforge:pending-terms', JSON.stringify(data.pendingTerms || []));
       toast.success(`Acesso autorizado! Bem-vindo, ${data.user.name}.`);
       window.location.href = '/home';
     },

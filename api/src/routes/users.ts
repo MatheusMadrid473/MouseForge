@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db';
-import { users } from '../db/schema';
+import { termAcceptances, terms, users } from '../db/schema';
 import { eq, or } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from '../auth/password';
 
@@ -41,6 +41,14 @@ export async function userRoutes(app: FastifyInstance) {
     };
   }
 
+  async function getPendingTerms(userId: string) {
+    const activeTerms = await db.select().from(terms).where(eq(terms.isActive, true));
+    const acceptances = await db.select().from(termAcceptances).where(eq(termAcceptances.userId, userId));
+    const acceptedTermIds = new Set(acceptances.map((acceptance) => acceptance.termId));
+
+    return activeTerms.filter((term) => !acceptedTermIds.has(term.id));
+  }
+
   app.post('/auth/login', async (request, reply) => {
     const loginSchema = z.object({
       login: z.string().min(3),
@@ -64,6 +72,7 @@ export async function userRoutes(app: FastifyInstance) {
     return {
       token,
       user: toSafeUser(user),
+      pendingTerms: await getPendingTerms(user.id),
     };
   });
 

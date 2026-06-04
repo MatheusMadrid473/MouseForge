@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { userRoutes } from './routes/users';
+import { systemRoutes } from './routes/system';
 import { ensureSuperUser } from './bootstrap/super-user';
 import { ensureUserSchema } from './bootstrap/user-schema';
 import 'dotenv/config';
@@ -21,6 +22,7 @@ app.register(jwt, {
 });
 
 app.register(userRoutes);
+app.register(systemRoutes);
 
 const start = async () => {
   try {

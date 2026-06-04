@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart3,
   Boxes,
+  Building2,
   ChevronDown,
   CreditCard,
   Edit,
+  FileCheck2,
   FileText,
   KeyRound,
   LayoutDashboard,
@@ -43,7 +45,19 @@ type LoggedUser = {
 };
 
 type UserRole = 'admin' | 'manager' | 'cashier';
-type ActiveView = 'dashboard' | 'cashier' | 'fiscal' | 'finance' | 'products' | 'stock' | 'customers' | 'reports' | 'users' | 'settings';
+type ActiveView =
+  | 'dashboard'
+  | 'cashier'
+  | 'fiscal'
+  | 'finance'
+  | 'products'
+  | 'stock'
+  | 'customers'
+  | 'reports'
+  | 'companies'
+  | 'terms'
+  | 'users'
+  | 'settings';
 
 type SystemUser = {
   id: string;
@@ -55,6 +69,29 @@ type SystemUser = {
   isMaster?: boolean;
 };
 
+type Company = {
+  id: string;
+  name: string;
+  document?: string | null;
+  isActive: boolean;
+};
+
+type Branch = {
+  id: string;
+  companyId: string;
+  name: string;
+  document?: string | null;
+  isActive: boolean;
+};
+
+type LegalTerm = {
+  id: string;
+  title: string;
+  version: string;
+  content: string;
+  isActive: boolean;
+};
+
 type UserFormState = {
   id?: string;
   name: string;
@@ -64,7 +101,7 @@ type UserFormState = {
   role: UserRole;
 };
 
-type PreviewView = Exclude<ActiveView, 'dashboard' | 'users'>;
+type PreviewView = Exclude<ActiveView, 'dashboard' | 'users' | 'companies' | 'terms'>;
 
 type PreviewConfig = {
   title: string;
@@ -302,6 +339,8 @@ const menuSections: MenuSection[] = [
   {
     title: 'Sistema',
     items: [
+      { id: 'companies', label: 'Empresas e filiais', icon: Building2 },
+      { id: 'terms', label: 'Termos/LGPD', icon: FileCheck2 },
       { id: 'users', label: 'Usuarios', icon: Users },
       { id: 'settings', label: 'Configuracoes', icon: Settings },
     ],
@@ -962,6 +1001,406 @@ function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
   );
 }
 
+function CompaniesView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [companyForm, setCompanyForm] = useState({ id: '', name: '', document: '' });
+  const [branchForm, setBranchForm] = useState({ id: '', companyId: '', name: '', document: '' });
+
+  const { data: companies = [] } = useQuery<Company[]>({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      const response = await api.get('/companies');
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster,
+  });
+
+  const { data: branches = [] } = useQuery<Branch[]>({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const response = await api.get('/branches');
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster,
+  });
+
+  const saveCompany = useMutation({
+    mutationFn: async () => {
+      if (companyForm.id) {
+        const response = await api.put(`/companies/${companyForm.id}`, {
+          name: companyForm.name,
+          document: companyForm.document,
+        });
+        return response.data;
+      }
+
+      const response = await api.post('/companies', {
+        name: companyForm.name,
+        document: companyForm.document,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      setCompanyForm({ id: '', name: '', document: '' });
+      toast.success('Empresa salva com sucesso.');
+    },
+  });
+
+  const saveBranch = useMutation({
+    mutationFn: async () => {
+      if (branchForm.id) {
+        const response = await api.put(`/branches/${branchForm.id}`, {
+          companyId: branchForm.companyId,
+          name: branchForm.name,
+          document: branchForm.document,
+        });
+        return response.data;
+      }
+
+      const response = await api.post('/branches', {
+        companyId: branchForm.companyId,
+        name: branchForm.name,
+        document: branchForm.document,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      setBranchForm({ id: '', companyId: '', name: '', document: '' });
+      toast.success('Filial salva com sucesso.');
+    },
+  });
+
+  const toggleCompany = useMutation({
+    mutationFn: async (company: Company) => api.put(`/companies/${company.id}`, { isActive: !company.isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+
+  const toggleBranch = useMutation({
+    mutationFn: async (branch: Branch) => api.put(`/branches/${branch.id}`, { isActive: !branch.isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['branches'] }),
+  });
+
+  if (!loggedUser.isMaster) {
+    return <PreviewView view="settings" />;
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Empresas e filiais</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Cadastre empresas clientes e suas unidades para isolar operacoes por loja.</p>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!companyForm.name.trim()) {
+              toast.error('Informe o nome da empresa.');
+              return;
+            }
+            saveCompany.mutate();
+          }}
+          className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        >
+          <h3 className="text-lg font-bold text-slate-950 dark:text-white">{companyForm.id ? 'Editar empresa' : 'Nova empresa'}</h3>
+          <div className="mt-4 grid gap-4">
+            <input
+              value={companyForm.name}
+              onChange={(event) => setCompanyForm((current) => ({ ...current, name: event.target.value }))}
+              className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950"
+              placeholder="Nome da empresa"
+            />
+            <input
+              value={companyForm.document}
+              onChange={(event) => setCompanyForm((current) => ({ ...current, document: event.target.value }))}
+              className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950"
+              placeholder="CNPJ ou documento"
+            />
+          </div>
+          <button className="mt-4 flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white" type="submit">
+            <Save size={17} />
+            Salvar empresa
+          </button>
+        </form>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!branchForm.companyId || !branchForm.name.trim()) {
+              toast.error('Informe empresa e nome da filial.');
+              return;
+            }
+            saveBranch.mutate();
+          }}
+          className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        >
+          <h3 className="text-lg font-bold text-slate-950 dark:text-white">{branchForm.id ? 'Editar filial' : 'Nova filial'}</h3>
+          <div className="mt-4 grid gap-4">
+            <select
+              value={branchForm.companyId}
+              onChange={(event) => setBranchForm((current) => ({ ...current, companyId: event.target.value }))}
+              className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950"
+            >
+              <option value="">Selecione a empresa</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+            <input
+              value={branchForm.name}
+              onChange={(event) => setBranchForm((current) => ({ ...current, name: event.target.value }))}
+              className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950"
+              placeholder="Nome da filial"
+            />
+            <input
+              value={branchForm.document}
+              onChange={(event) => setBranchForm((current) => ({ ...current, document: event.target.value }))}
+              className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950"
+              placeholder="CNPJ ou documento"
+            />
+          </div>
+          <button className="mt-4 flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white" type="submit">
+            <Save size={17} />
+            Salvar filial
+          </button>
+        </form>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <h3 className="font-bold text-slate-950 dark:text-white">Empresas</h3>
+          </div>
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {companies.map((company) => (
+              <div key={company.id} className="flex items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="font-bold text-slate-950 dark:text-white">{company.name}</p>
+                  <p className="text-xs text-slate-500">{company.document || 'Sem documento'}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setCompanyForm({ id: company.id, name: company.name, document: company.document || '' })}>
+                    <Edit size={17} />
+                  </button>
+                  <button className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => toggleCompany.mutate(company)}>
+                    {company.isActive ? 'Inativar' : 'Ativar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <h3 className="font-bold text-slate-950 dark:text-white">Filiais</h3>
+          </div>
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {branches.map((branch) => (
+              <div key={branch.id} className="flex items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="font-bold text-slate-950 dark:text-white">{branch.name}</p>
+                  <p className="text-xs text-slate-500">{companies.find((company) => company.id === branch.companyId)?.name || 'Empresa'} - {branch.document || 'Sem documento'}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setBranchForm({ id: branch.id, companyId: branch.companyId, name: branch.name, document: branch.document || '' })}>
+                    <Edit size={17} />
+                  </button>
+                  <button className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => toggleBranch.mutate(branch)}>
+                    {branch.isActive ? 'Inativar' : 'Ativar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({ id: '', title: '', version: '', content: '' });
+
+  const { data: termsList = [] } = useQuery<LegalTerm[]>({
+    queryKey: ['terms'],
+    queryFn: async () => {
+      const response = await api.get('/terms');
+      return response.data;
+    },
+    enabled: !!loggedUser.isMaster,
+  });
+
+  const saveTerm = useMutation({
+    mutationFn: async () => {
+      if (form.id) {
+        const response = await api.put(`/terms/${form.id}`, {
+          title: form.title,
+          version: form.version,
+          content: form.content,
+        });
+        return response.data;
+      }
+
+      const response = await api.post('/terms', {
+        title: form.title,
+        version: form.version,
+        content: form.content,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['terms'] });
+      setForm({ id: '', title: '', version: '', content: '' });
+      toast.success('Termo salvo com sucesso.');
+    },
+  });
+
+  const toggleTerm = useMutation({
+    mutationFn: async (term: LegalTerm) => api.put(`/terms/${term.id}`, { isActive: !term.isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['terms'] }),
+  });
+
+  if (!loggedUser.isMaster) {
+    return <PreviewView view="settings" />;
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Termos e LGPD</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Cadastre versoes de termos de uso. Usuarios precisam aceitar os termos ativos para usar a plataforma.</p>
+      </div>
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!form.title.trim() || !form.version.trim() || form.content.trim().length < 10) {
+            toast.error('Informe titulo, versao e conteudo do termo.');
+            return;
+          }
+          saveTerm.mutate();
+        }}
+        className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <h3 className="text-lg font-bold text-slate-950 dark:text-white">{form.id ? 'Editar termo' : 'Novo termo'}</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950" placeholder="Titulo" />
+          <input value={form.version} onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950" placeholder="Versao, ex: 2026.1" />
+        </div>
+        <textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} className="mt-4 min-h-40 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950" placeholder="Texto do termo de uso e privacidade" />
+        <button className="mt-4 flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white" type="submit">
+          <Save size={17} />
+          Salvar termo
+        </button>
+      </form>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h3 className="font-bold text-slate-950 dark:text-white">Termos cadastrados</h3>
+        </div>
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          {termsList.map((term) => (
+            <div key={term.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-slate-950 dark:text-white">{term.title}</p>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">v{term.version}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${term.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{term.isActive ? 'Ativo' : 'Inativo'}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{term.content}</p>
+              </div>
+              <div className="flex gap-2">
+                <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setForm({ id: term.id, title: term.title, version: term.version, content: term.content })}>
+                  <Edit size={17} />
+                </button>
+                <button className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => toggleTerm.mutate(term)}>
+                  {term.isActive ? 'Inativar' : 'Ativar'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TermsAcceptanceGate() {
+  const [pendingTerms, setPendingTerms] = useState<LegalTerm[]>(() => JSON.parse(localStorage.getItem('mouseforge:pending-terms') || '[]'));
+
+  const { data } = useQuery<LegalTerm[]>({
+    queryKey: ['pending-terms'],
+    queryFn: async () => {
+      const response = await api.get('/terms/pending');
+      return response.data;
+    },
+  });
+
+  useEffect(() => {
+    if (data) {
+      setPendingTerms(data);
+      localStorage.setItem('mouseforge:pending-terms', JSON.stringify(data));
+    }
+  }, [data]);
+
+  const acceptTerms = useMutation({
+    mutationFn: async () => {
+      await Promise.all(pendingTerms.map((term) => api.post(`/terms/${term.id}/accept`)));
+    },
+    onSuccess: () => {
+      setPendingTerms([]);
+      localStorage.setItem('mouseforge:pending-terms', '[]');
+      toast.success('Termos aceitos com sucesso.');
+    },
+  });
+
+  const logout = () => {
+    localStorage.removeItem('mouseforge:token');
+    localStorage.removeItem('mouseforge:user');
+    localStorage.removeItem('mouseforge:pending-terms');
+    window.location.href = '/';
+  };
+
+  if (pendingTerms.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/70 px-4 py-6">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">Aceite obrigatorio</p>
+        <h2 className="mt-2 text-2xl font-extrabold text-slate-950 dark:text-white">Termos de uso e privacidade</h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Para continuar usando o MouseForge, aceite os termos ativos abaixo. Caso contrario, voce sera desconectado.</p>
+
+        <div className="mt-5 space-y-4">
+          {pendingTerms.map((term) => (
+            <article key={term.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+              <h3 className="font-bold text-slate-950 dark:text-white">{term.title} v{term.version}</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{term.content}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button className="min-h-[44px] rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 dark:border-slate-800 dark:text-slate-200" onClick={logout}>
+            Nao aceitar e sair
+          </button>
+          <button className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-bold text-white" onClick={() => acceptTerms.mutate()} disabled={acceptTerms.isPending}>
+            {acceptTerms.isPending ? 'Registrando...' : 'Aceitar termos'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Home() {
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const userLogado = useMemo<LoggedUser>(() => JSON.parse(localStorage.getItem('mouseforge:user') || '{}'), []);
@@ -972,9 +1411,15 @@ export function Home() {
     () =>
       menuSections.map((section) => ({
         ...section,
-        items: section.items.filter((item) => item.id !== 'users' || canManageUsers(userLogado.role)),
+        items: section.items.filter((item) => {
+          if ((item.id === 'companies' || item.id === 'terms') && !userLogado.isMaster) {
+            return false;
+          }
+
+          return item.id !== 'users' || canManageUsers(userLogado.role);
+        }),
       })),
-    [userLogado.role]
+    [userLogado.isMaster, userLogado.role]
   );
 
   const handleLogout = () => {
@@ -1082,6 +1527,8 @@ export function Home() {
           </header>
 
           {activeView === 'dashboard' && <DashboardView />}
+          {activeView === 'companies' && <CompaniesView loggedUser={userLogado} />}
+          {activeView === 'terms' && <TermsView loggedUser={userLogado} />}
           {activeView === 'users' && <UsersView loggedUser={userLogado} />}
           {activeView === 'cashier' && <PreviewView view="cashier" />}
           {activeView === 'fiscal' && <PreviewView view="fiscal" />}
@@ -1093,6 +1540,7 @@ export function Home() {
           {activeView === 'settings' && <PreviewView view="settings" />}
         </div>
       </main>
+      <TermsAcceptanceGate />
     </div>
   );
 }
