@@ -7,6 +7,7 @@ export async function ensureSuperUser() {
   const email = process.env.SUPER_USER_EMAIL;
   const password = process.env.SUPER_USER_PASSWORD;
   const name = process.env.SUPER_USER_NAME || 'Super Administrador';
+  const username = process.env.SUPER_USER_USERNAME || email?.split('@')[0] || 'admin';
 
   if (!email || !password) {
     return;
@@ -18,6 +19,7 @@ export async function ensureSuperUser() {
     await db.insert(users).values({
       name,
       email,
+      username,
       password: hashPassword(password),
       role: 'admin',
     });
@@ -25,7 +27,7 @@ export async function ensureSuperUser() {
   }
 
   const needsPasswordUpdate = !verifyPassword(password, existingUser.password);
-  const needsProfileUpdate = existingUser.name !== name || existingUser.role !== 'admin';
+  const needsProfileUpdate = existingUser.name !== name || existingUser.role !== 'admin' || existingUser.username !== username;
 
   if (!needsPasswordUpdate && !needsProfileUpdate) {
     return;
@@ -35,6 +37,7 @@ export async function ensureSuperUser() {
     .update(users)
     .set({
       name,
+      username,
       role: 'admin',
       password: needsPasswordUpdate ? hashPassword(password) : existingUser.password,
       updatedAt: new Date(),

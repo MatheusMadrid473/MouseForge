@@ -1,30 +1,92 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart3,
   Boxes,
   ChevronDown,
   CreditCard,
+  Edit,
   FileText,
   LayoutDashboard,
   LogOut,
   Moon,
   PackageSearch,
+  Plus,
   ReceiptText,
+  Save,
   Settings,
   ShoppingCart,
   Store,
   Sun,
+  Trash2,
   TrendingUp,
   Users,
   WalletCards,
+  X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTheme } from '../hooks/useTheme';
+import { api } from '../lib/api';
 
 type LoggedUser = {
   id?: string;
   name?: string;
   email?: string;
-  role?: string;
+  username?: string;
+  role?: UserRole;
+};
+
+type UserRole = 'admin' | 'manager' | 'cashier';
+type ActiveView = 'dashboard' | 'cashier' | 'fiscal' | 'finance' | 'products' | 'stock' | 'customers' | 'reports' | 'users' | 'settings';
+
+type SystemUser = {
+  id: string;
+  name: string;
+  email: string;
+  username?: string | null;
+  role: UserRole;
+  createdAt: string;
+};
+
+type UserFormState = {
+  id?: string;
+  name: string;
+  email: string;
+  username: string;
+  password: string;
+  role: UserRole;
+};
+
+type PreviewView = Exclude<ActiveView, 'dashboard' | 'users'>;
+
+type PreviewConfig = {
+  title: string;
+  eyebrow: string;
+  description: string;
+  primaryAction: string;
+  metrics: Array<{ label: string; value: string; helper: string }>;
+  rows: Array<{ title: string; detail: string; status: string }>;
+};
+
+type MenuSection = {
+  title: string;
+  items: Array<{ id: ActiveView; label: string; icon: LucideIcon }>;
+};
+
+const emptyUserForm: UserFormState = {
+  name: '',
+  email: '',
+  username: '',
+  password: '',
+  role: 'cashier',
+};
+
+const roleLabels: Record<UserRole, string> = {
+  admin: 'Admin',
+  manager: 'Gerente',
+  cashier: 'Caixa',
 };
 
 const summaryCards = [
@@ -82,52 +144,656 @@ const recentActivity = [
   { id: 'ES-2207', title: 'Estoque baixo', detail: 'Arroz 5kg - corredor 03', value: '6 un', status: 'Repor' },
 ];
 
-const menuSections = [
+const previewConfigs: Record<PreviewView, PreviewConfig> = {
+  cashier: {
+    title: 'Frente de caixa',
+    eyebrow: 'Operacao de venda',
+    description: 'Previa do terminal de vendas com busca de produtos, carrinho, descontos e fechamento por forma de pagamento.',
+    primaryAction: 'Abrir novo caixa',
+    metrics: [
+      { label: 'Caixa atual', value: 'Aberto', helper: 'Operador principal' },
+      { label: 'Itens no carrinho', value: '5', helper: 'R$ 86,40 parcial' },
+      { label: 'Tempo medio', value: '2m 18s', helper: 'Por atendimento' },
+    ],
+    rows: [
+      { title: 'Arroz Tipo 1 5kg', detail: '7891000100101 - 2 un', status: 'R$ 47,80' },
+      { title: 'Leite integral 1L', detail: '7891000200202 - 3 un', status: 'R$ 18,90' },
+      { title: 'Pagamento selecionado', detail: 'Pix com confirmacao instantanea', status: 'Pronto' },
+    ],
+  },
+  fiscal: {
+    title: 'Notas fiscais',
+    eyebrow: 'NFC-e / NF-e',
+    description: 'Previa do painel fiscal para transmissao, contingencia, autorizacoes e consulta de documentos emitidos.',
+    primaryAction: 'Consultar Sefaz',
+    metrics: [
+      { label: 'Autorizadas hoje', value: '128', helper: 'Sem rejeicoes criticas' },
+      { label: 'Pendentes', value: '3', helper: 'Fila de envio' },
+      { label: 'Contingencia', value: 'Off', helper: 'Sefaz online' },
+    ],
+    rows: [
+      { title: 'NFC-e 0009128', detail: 'Venda CX-1042 - Serie 1', status: 'Autorizada' },
+      { title: 'NFC-e 0009127', detail: 'Cliente nao identificado', status: 'Autorizada' },
+      { title: 'NFC-e 0009126', detail: 'Aguardando retorno', status: 'Pendente' },
+    ],
+  },
+  finance: {
+    title: 'Financeiro',
+    eyebrow: 'Caixa e conferencias',
+    description: 'Previa para sangria, suprimento, resumo por meios de pagamento e fechamento diario do caixa.',
+    primaryAction: 'Fechar caixa',
+    metrics: [
+      { label: 'Saldo esperado', value: 'R$ 4.892', helper: 'Vendas do dia' },
+      { label: 'Sangrias', value: 'R$ 500', helper: '1 retirada' },
+      { label: 'Diferenca', value: 'R$ 0,00', helper: 'Conferencia ok' },
+    ],
+    rows: [
+      { title: 'Pix', detail: '49 transacoes aprovadas', status: 'R$ 1.860' },
+      { title: 'Cartao de debito', detail: '35 transacoes aprovadas', status: 'R$ 1.320' },
+      { title: 'Dinheiro', detail: 'Conferencia de gaveta', status: 'R$ 538' },
+    ],
+  },
+  products: {
+    title: 'Produtos',
+    eyebrow: 'Cadastro comercial',
+    description: 'Previa do cadastro de produtos com codigo de barras, preco, categoria, NCM e regras fiscais.',
+    primaryAction: 'Novo produto',
+    metrics: [
+      { label: 'Produtos ativos', value: '1.248', helper: 'Catalogo atual' },
+      { label: 'Sem codigo', value: '12', helper: 'Revisar cadastro' },
+      { label: 'Margem media', value: '24%', helper: 'Base de venda' },
+    ],
+    rows: [
+      { title: 'Arroz Tipo 1 5kg', detail: 'Categoria: Mercearia - NCM 1006.30.21', status: 'Ativo' },
+      { title: 'Leite integral 1L', detail: 'Categoria: Frios e laticinios', status: 'Ativo' },
+      { title: 'Cafe tradicional 500g', detail: 'Preco sugerido R$ 18,90', status: 'Revisar' },
+    ],
+  },
+  stock: {
+    title: 'Estoque',
+    eyebrow: 'Saldos e reposicao',
+    description: 'Previa para acompanhar saldo atual, estoque minimo, entradas, perdas e necessidades de compra.',
+    primaryAction: 'Registrar entrada',
+    metrics: [
+      { label: 'Itens criticos', value: '14', helper: 'Abaixo do minimo' },
+      { label: 'Entradas hoje', value: '7', helper: 'Notas recebidas' },
+      { label: 'Perdas', value: 'R$ 92', helper: 'Quebras e validade' },
+    ],
+    rows: [
+      { title: 'Arroz Tipo 1 5kg', detail: 'Saldo 6 un - minimo 12 un', status: 'Repor' },
+      { title: 'Banana prata kg', detail: 'Validade curta no hortifruti', status: 'Atencao' },
+      { title: 'Refrigerante cola 2L', detail: 'Entrada prevista para amanha', status: 'Ok' },
+    ],
+  },
+  customers: {
+    title: 'Clientes',
+    eyebrow: 'Cadastro e historico',
+    description: 'Previa de clientes para vendas identificadas, dados de contato e historico de compras.',
+    primaryAction: 'Novo cliente',
+    metrics: [
+      { label: 'Clientes ativos', value: '342', helper: 'Com compra recente' },
+      { label: 'Ticket medio', value: 'R$ 64', helper: 'Clientes identificados' },
+      { label: 'Novos no mes', value: '18', helper: 'Cadastro no caixa' },
+    ],
+    rows: [
+      { title: 'Maria Oliveira', detail: 'Ultima compra hoje - Pix', status: 'Ativa' },
+      { title: 'Joao Santos', detail: 'CPF informado no cupom', status: 'Ativo' },
+      { title: 'Cliente balcao', detail: 'Venda sem identificacao', status: 'Padrao' },
+    ],
+  },
+  reports: {
+    title: 'Relatorios',
+    eyebrow: 'Indicadores e exportacao',
+    description: 'Previa de relatorios por vendas, operadores, produtos, margem, impostos e fechamento diario.',
+    primaryAction: 'Gerar relatorio',
+    metrics: [
+      { label: 'Vendas no mes', value: 'R$ 82k', helper: '+8,4% vs anterior' },
+      { label: 'Produto lider', value: 'Arroz 5kg', helper: '312 unidades' },
+      { label: 'Operador destaque', value: 'Caixa 01', helper: '42% das vendas' },
+    ],
+    rows: [
+      { title: 'Resumo diario', detail: 'Vendas, cupons, descontos e formas de pagamento', status: 'Disponivel' },
+      { title: 'Curva ABC', detail: 'Produtos por faturamento e giro', status: 'Previa' },
+      { title: 'Fechamento fiscal', detail: 'NFC-e autorizadas e rejeitadas', status: 'Previa' },
+    ],
+  },
+  settings: {
+    title: 'Configuracoes',
+    eyebrow: 'Parametros da loja',
+    description: 'Previa das preferencias do PDV, loja, fiscal, numeracao, permissoes e integracoes.',
+    primaryAction: 'Salvar parametros',
+    metrics: [
+      { label: 'Loja ativa', value: 'Matriz', helper: 'Ambiente producao' },
+      { label: 'Serie NFC-e', value: '001', helper: 'Numeracao atual' },
+      { label: 'Tema padrao', value: 'Sistema', helper: 'Usuario pode alterar' },
+    ],
+    rows: [
+      { title: 'Dados da loja', detail: 'CNPJ, razao social, endereco e contatos', status: 'Pendente' },
+      { title: 'Fiscal', detail: 'CSC, certificado, serie e ambiente', status: 'Previa' },
+      { title: 'Permissoes', detail: 'Regras por cargo para operacoes sensiveis', status: 'Previa' },
+    ],
+  },
+};
+
+const menuSections: MenuSection[] = [
   {
     title: 'Operacao',
     items: [
-      { label: 'Dashboard', icon: LayoutDashboard, active: true },
-      { label: 'Frente de caixa', icon: ShoppingCart },
-      { label: 'Notas fiscais', icon: FileText },
-      { label: 'Financeiro', icon: WalletCards },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'cashier', label: 'Frente de caixa', icon: ShoppingCart },
+      { id: 'fiscal', label: 'Notas fiscais', icon: FileText },
+      { id: 'finance', label: 'Financeiro', icon: WalletCards },
     ],
   },
   {
     title: 'Cadastros',
     items: [
-      { label: 'Produtos', icon: PackageSearch },
-      { label: 'Estoque', icon: Boxes },
-      { label: 'Clientes', icon: Users },
-      { label: 'Relatorios', icon: BarChart3 },
+      { id: 'products', label: 'Produtos', icon: PackageSearch },
+      { id: 'stock', label: 'Estoque', icon: Boxes },
+      { id: 'customers', label: 'Clientes', icon: Users },
+      { id: 'reports', label: 'Relatorios', icon: BarChart3 },
     ],
   },
   {
     title: 'Sistema',
-    items: [{ label: 'Configuracoes', icon: Settings }],
+    items: [
+      { id: 'users', label: 'Usuarios', icon: Users },
+      { id: 'settings', label: 'Configuracoes', icon: Settings },
+    ],
   },
 ];
 
 function getRoleLabel(role?: string) {
-  const roleMap: Record<string, string> = {
-    admin: 'ADMIN',
-    manager: 'GERENTE',
-    cashier: 'CAIXA',
+  return role && role in roleLabels ? roleLabels[role as UserRole].toUpperCase() : 'OPERADOR';
+}
+
+function canManageUsers(role?: UserRole) {
+  return role === 'admin' || role === 'manager';
+}
+
+function PreviewView({ view }: { view: PreviewView }) {
+  const config = previewConfigs[view];
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">{config.eyebrow}</p>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+                Previa
+              </span>
+            </div>
+            <h2 className="mt-3 text-2xl font-extrabold text-slate-950 dark:text-white">{config.title}</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">{config.description}</p>
+          </div>
+          <button
+            type="button"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white shadow-sm lg:w-auto"
+          >
+            <Plus size={18} />
+            {config.primaryAction}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {config.metrics.map((metric) => (
+          <article key={metric.label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{metric.label}</p>
+            <p className="mt-3 text-2xl font-extrabold text-slate-950 dark:text-white">{metric.value}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{metric.helper}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+        <article className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+            <h3 className="text-base font-bold text-slate-950 dark:text-white">Fluxo principal</h3>
+          </div>
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {config.rows.map((row) => (
+              <div key={row.title} className="grid gap-3 px-6 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                <div>
+                  <p className="font-bold text-slate-950 dark:text-white">{row.title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{row.detail}</p>
+                </div>
+                <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {row.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="text-base font-bold text-slate-950 dark:text-white">Estado da tela</h3>
+          <div className="mt-5 space-y-4">
+            {['Layout aprovado', 'Integracao pendente', 'Banco nao criado'].map((item, index) => (
+              <div key={item} className="flex items-center gap-3">
+                <div className={`h-3 w-3 rounded-full ${index === 0 ? 'bg-emerald-500' : index === 1 ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{item}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 rounded-lg bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+            Esta tela e apenas visual por enquanto. O proximo passo e conectar este modulo ao banco e criar suas regras de permissao.
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function DashboardView() {
+  return (
+    <>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+
+          return (
+            <article key={card.label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{card.label}</p>
+                  <p className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{card.value}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{card.helper}</p>
+                </div>
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${card.tone}`}>
+                  <Icon size={21} />
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="text-brand-600 dark:text-brand-400" size={19} />
+              <h2 className="text-base font-bold text-slate-950 dark:text-white">Historico de vendas</h2>
+            </div>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ultimos 7 dias</span>
+          </div>
+
+          <div className="flex h-72 items-end gap-3 border-b border-l border-slate-200 px-3 pb-4 dark:border-slate-800">
+            {salesTrend.map((item) => (
+              <div key={item.label} className="flex h-full flex-1 flex-col justify-end gap-3">
+                <div className="relative flex flex-1 items-end">
+                  <div className="w-full rounded-t-lg bg-brand-500/85 transition-all hover:bg-brand-600" style={{ height: `${item.value}%` }} />
+                </div>
+                <p className="text-center text-xs font-semibold text-slate-500 dark:text-slate-400">{item.label}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-6 flex items-center gap-2">
+            <CreditCard className="text-emerald-600 dark:text-emerald-400" size={19} />
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Meios de pagamento</h2>
+          </div>
+
+          <div className="mx-auto mb-7 grid h-44 w-44 place-items-center rounded-full bg-[conic-gradient(#10b981_0_38%,#244aa5_38%_65%,#8b5cf6_65%_89%,#f59e0b_89%_100%)]">
+            <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner dark:bg-slate-900">
+              <span className="text-2xl font-extrabold text-slate-950 dark:text-white">128</span>
+              <span className="-mt-2 text-[11px] font-semibold text-slate-500">vendas</span>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {paymentMix.map((item) => (
+              <div key={item.label} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300">
+                  <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
+                  {item.label}
+                </span>
+                <span className="font-bold text-slate-950 dark:text-white">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <ReceiptText className="text-brand-600 dark:text-brand-400" size={19} />
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Monitoramento operacional</h2>
+          </div>
+          <span className="w-fit rounded-full border border-slate-200 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            Tempo real
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          {recentActivity.map((activity) => (
+            <div key={activity.id} className="grid gap-3 px-6 py-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_120px_120px] sm:items-center">
+              <span className="font-bold text-brand-600 dark:text-brand-400">{activity.id}</span>
+              <div>
+                <p className="font-bold text-slate-950 dark:text-white">{activity.title}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
+              </div>
+              <span className="font-bold text-slate-950 dark:text-white">{activity.value}</span>
+              <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                {activity.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function UsersView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState<UserFormState>(emptyUserForm);
+  const isEditing = !!form.id;
+
+  const { data: users = [], isLoading } = useQuery<SystemUser[]>({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const response = await api.get('/users');
+      return response.data;
+    },
+  });
+
+  const saveUser = useMutation({
+    mutationFn: async (payload: UserFormState) => {
+      if (payload.id) {
+        const response = await api.put(`/users/${payload.id}`, {
+          name: payload.name,
+          username: payload.username,
+          role: payload.role,
+        });
+        return response.data;
+      }
+
+      const response = await api.post('/users', {
+        name: payload.name,
+        email: payload.email,
+        username: payload.username,
+        password: payload.password,
+        role: payload.role,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setIsModalOpen(false);
+      setForm(emptyUserForm);
+      toast.success(isEditing ? 'Usuario atualizado com sucesso.' : 'Usuario criado com sucesso.');
+    },
+    onError: () => {
+      toast.error('Nao foi possivel salvar este usuario.');
+    },
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/users/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Usuario removido com sucesso.');
+    },
+    onError: () => {
+      toast.error('Nao foi possivel remover este usuario.');
+    },
+  });
+
+  const openCreateModal = () => {
+    setForm(emptyUserForm);
+    setIsModalOpen(true);
   };
 
-  return role ? roleMap[role] || role.toUpperCase() : 'OPERADOR';
+  const openEditModal = (user: SystemUser) => {
+    setForm({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      username: user.username || '',
+      password: '',
+      role: user.role,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!form.name.trim() || !form.email.trim() || !form.username.trim()) {
+      toast.error('Informe nome, e-mail e usuario.');
+      return;
+    }
+
+    if (!isEditing && form.password.length < 6) {
+      toast.error('A senha inicial deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    saveUser.mutate(form);
+  };
+
+  const managerAllowed = canManageUsers(loggedUser.role);
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">Configurador</p>
+          <h2 className="mt-2 text-2xl font-extrabold text-slate-950 dark:text-white">Usuarios do sistema</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Controle operadores, gerentes e administradores do PDV.</p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreateModal}
+          disabled={!managerAllowed}
+          className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-800"
+        >
+          <Plus size={18} />
+          Novo usuario
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                <th className="px-5 py-4">Nome</th>
+                <th className="px-5 py-4">Usuario</th>
+                <th className="px-5 py-4">E-mail</th>
+                <th className="px-5 py-4">Cargo</th>
+                <th className="px-5 py-4">Criado em</th>
+                <th className="px-5 py-4 text-right">Acoes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+              {isLoading ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={6}>
+                    Carregando usuarios...
+                  </td>
+                </tr>
+              ) : (
+                users.map((user) => (
+                  <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                    <td className="px-5 py-4">
+                      <p className="font-bold text-slate-950 dark:text-white">{user.name}</p>
+                      {user.id === loggedUser.id && <p className="text-xs text-brand-600 dark:text-brand-400">Usuario logado</p>}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{user.username ? `@${user.username}` : '-'}</td>
+                    <td className="px-5 py-4 text-slate-600 dark:text-slate-300">{user.email}</td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        {roleLabels[user.role]}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(user)}
+                          disabled={!managerAllowed}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-brand-500/10 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-brand-300"
+                          title="Editar usuario"
+                        >
+                          <Edit size={17} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteUser.mutate(user.id)}
+                          disabled={!managerAllowed || user.id === loggedUser.id || deleteUser.isPending}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-red-300"
+                          title="Remover usuario"
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 px-4 py-6">
+          <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-950 dark:text-white">{isEditing ? 'Editar usuario' : 'Novo usuario'}</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {isEditing ? 'Atualize nome e cargo do colaborador.' : 'Crie o acesso inicial para um colaborador.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Nome
+                <input
+                  value={form.name}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  placeholder="Nome do colaborador"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                E-mail
+                <input
+                  type="email"
+                  value={form.email}
+                  disabled={isEditing}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  placeholder="operador@mercado.com"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Usuario
+                <input
+                  value={form.username}
+                  onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                  className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  placeholder="operador01"
+                />
+              </label>
+
+              {!isEditing && (
+                <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Senha inicial
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                    className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    placeholder="Minimo 6 caracteres"
+                  />
+                </label>
+              )}
+
+              <label className="grid gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Cargo
+                <select
+                  value={form.role}
+                  onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as UserRole }))}
+                  className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="manager">Gerente</option>
+                  <option value="cashier">Caixa</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="min-h-[44px] rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saveUser.isPending}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+              >
+                <Save size={17} />
+                {saveUser.isPending ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function Home() {
+  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const userLogado = useMemo<LoggedUser>(() => JSON.parse(localStorage.getItem('mouseforge:user') || '{}'), []);
-  const { theme, toggleTheme } = useTheme(userLogado.id || userLogado.email);
+  const { theme, toggleTheme } = useTheme(userLogado.id || userLogado.username || userLogado.email);
   const firstName = userLogado.name?.split(' ')[0] || 'Operador';
   const userInitial = firstName.charAt(0).toUpperCase();
+  const visibleMenuSections = useMemo(
+    () =>
+      menuSections.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.id !== 'users' || canManageUsers(userLogado.role)),
+      })),
+    [userLogado.role]
+  );
 
   const handleLogout = () => {
     localStorage.removeItem('mouseforge:token');
     localStorage.removeItem('mouseforge:user');
     window.location.href = '/';
   };
+
+  const activeMenuItem = visibleMenuSections.flatMap((section) => section.items).find((item) => item.id === activeView);
+  const ActiveIcon = activeMenuItem?.icon || LayoutDashboard;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
@@ -145,21 +811,21 @@ export function Home() {
         </div>
 
         <nav className="flex-1 space-y-6 px-4">
-          {menuSections.map((section) => (
+          {visibleMenuSections.map((section) => (
             <div key={section.title}>
               <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{section.title}</p>
               <div className="space-y-1">
                 {section.items.map((item) => {
                   const Icon = item.icon;
+                  const isActive = activeView === item.id;
 
                   return (
                     <button
                       key={item.label}
                       type="button"
+                      onClick={() => setActiveView(item.id)}
                       className={`flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition ${
-                        item.active
-                          ? 'bg-brand-600 text-white shadow-lg shadow-brand-950/30'
-                          : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                        isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-950/30' : 'text-slate-400 hover:bg-slate-900 hover:text-white'
                       }`}
                     >
                       <Icon size={18} />
@@ -174,9 +840,7 @@ export function Home() {
 
         <div className="border-t border-slate-800 p-4">
           <div className="mb-4 flex items-center gap-3 rounded-lg bg-slate-900 px-3 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
-              {userInitial}
-            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">{userInitial}</div>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-white">{userLogado.name || 'Operador'}</p>
               <p className="text-xs text-slate-500">{getRoleLabel(userLogado.role)}</p>
@@ -198,11 +862,15 @@ export function Home() {
           <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">
-                <LayoutDashboard size={16} />
-                Painel de gestao
+                <ActiveIcon size={16} />
+                {activeMenuItem?.label || 'Dashboard'}
               </div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">Ola, {firstName}</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Status em tempo real das operacoes do mercado</p>
+              <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">
+                {activeView === 'dashboard' ? `Ola, ${firstName}` : activeMenuItem?.label}
+              </h1>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {activeView === 'dashboard' ? 'Status em tempo real das operacoes do mercado' : 'Configure e acompanhe os recursos do MouseForge'}
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -227,109 +895,16 @@ export function Home() {
             </div>
           </header>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {summaryCards.map((card) => {
-              const Icon = card.icon;
-
-              return (
-                <article
-                  key={card.label}
-                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{card.label}</p>
-                      <p className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{card.value}</p>
-                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{card.helper}</p>
-                    </div>
-                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${card.tone}`}>
-                      <Icon size={21} />
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </section>
-
-          <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="text-brand-600 dark:text-brand-400" size={19} />
-                  <h2 className="text-base font-bold text-slate-950 dark:text-white">Historico de vendas</h2>
-                </div>
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ultimos 7 dias</span>
-              </div>
-
-              <div className="flex h-72 items-end gap-3 border-b border-l border-slate-200 px-3 pb-4 dark:border-slate-800">
-                {salesTrend.map((item) => (
-                  <div key={item.label} className="flex h-full flex-1 flex-col justify-end gap-3">
-                    <div className="relative flex flex-1 items-end">
-                      <div
-                        className="w-full rounded-t-lg bg-brand-500/85 transition-all hover:bg-brand-600"
-                        style={{ height: `${item.value}%` }}
-                      />
-                    </div>
-                    <p className="text-center text-xs font-semibold text-slate-500 dark:text-slate-400">{item.label}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-6 flex items-center gap-2">
-                <CreditCard className="text-emerald-600 dark:text-emerald-400" size={19} />
-                <h2 className="text-base font-bold text-slate-950 dark:text-white">Meios de pagamento</h2>
-              </div>
-
-              <div className="mx-auto mb-7 grid h-44 w-44 place-items-center rounded-full bg-[conic-gradient(#10b981_0_38%,#244aa5_38%_65%,#8b5cf6_65%_89%,#f59e0b_89%_100%)]">
-                <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner dark:bg-slate-900">
-                  <span className="text-2xl font-extrabold text-slate-950 dark:text-white">128</span>
-                  <span className="-mt-2 text-[11px] font-semibold text-slate-500">vendas</span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {paymentMix.map((item) => (
-                  <div key={item.label} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300">
-                      <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
-                      {item.label}
-                    </span>
-                    <span className="font-bold text-slate-950 dark:text-white">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <ReceiptText className="text-brand-600 dark:text-brand-400" size={19} />
-                <h2 className="text-base font-bold text-slate-950 dark:text-white">Monitoramento operacional</h2>
-              </div>
-              <span className="w-fit rounded-full border border-slate-200 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                Tempo real
-              </span>
-            </div>
-
-            <div className="divide-y divide-slate-200 dark:divide-slate-800">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="grid gap-3 px-6 py-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_120px_120px] sm:items-center">
-                  <span className="font-bold text-brand-600 dark:text-brand-400">{activity.id}</span>
-                  <div>
-                    <p className="font-bold text-slate-950 dark:text-white">{activity.title}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
-                  </div>
-                  <span className="font-bold text-slate-950 dark:text-white">{activity.value}</span>
-                  <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {activity.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+          {activeView === 'dashboard' && <DashboardView />}
+          {activeView === 'users' && <UsersView loggedUser={userLogado} />}
+          {activeView === 'cashier' && <PreviewView view="cashier" />}
+          {activeView === 'fiscal' && <PreviewView view="fiscal" />}
+          {activeView === 'finance' && <PreviewView view="finance" />}
+          {activeView === 'products' && <PreviewView view="products" />}
+          {activeView === 'stock' && <PreviewView view="stock" />}
+          {activeView === 'customers' && <PreviewView view="customers" />}
+          {activeView === 'reports' && <PreviewView view="reports" />}
+          {activeView === 'settings' && <PreviewView view="settings" />}
         </div>
       </main>
     </div>

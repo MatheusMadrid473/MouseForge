@@ -144,6 +144,7 @@ PORT=3333
 
 SUPER_USER_NAME=Super Administrador
 SUPER_USER_EMAIL=admin@mouseforge.local
+SUPER_USER_USERNAME=admin
 SUPER_USER_PASSWORD=troque-essa-senha
 ```
 

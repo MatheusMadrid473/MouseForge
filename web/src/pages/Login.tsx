@@ -5,10 +5,10 @@ import { api } from '../lib/api';
 import { useTheme } from '../hooks/useTheme';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { Sun, Moon, Store, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { Sun, Moon, Store, Lock, UserRound, ShieldCheck } from 'lucide-react';
 
 const loginSchema = z.object({
-  email: z.string().email('Insira um e-mail valido'),
+  login: z.string().min(3, 'Informe seu e-mail ou usuario'),
   password: z.string().min(6, 'A senha deve conter no minimo 6 caracteres'),
   remember: z.boolean().optional(),
 });
@@ -17,7 +17,7 @@ type LoginData = z.infer<typeof loginSchema>;
 
 export function Login() {
   const { theme, toggleTheme } = useTheme();
-  const savedEmail = localStorage.getItem('mouseforge:remember-email') || '';
+  const savedLogin = localStorage.getItem('mouseforge:remember-login') || localStorage.getItem('mouseforge:remember-email') || '';
   const {
     register,
     handleSubmit,
@@ -25,23 +25,24 @@ export function Login() {
   } = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: savedEmail,
-      remember: !!savedEmail,
+      login: savedLogin,
+      remember: !!savedLogin,
     },
   });
 
   const { mutateAsync: loginMutation, isPending } = useMutation({
     mutationFn: async (data: LoginData) => {
       const response = await api.post('/auth/login', {
-        email: data.email,
+        login: data.login,
         password: data.password,
       });
       return { ...response.data, remember: data.remember };
     },
     onSuccess: (data) => {
       if (data.remember) {
-        localStorage.setItem('mouseforge:remember-email', data.user.email);
+        localStorage.setItem('mouseforge:remember-login', data.user.username || data.user.email);
       } else {
+        localStorage.removeItem('mouseforge:remember-login');
         localStorage.removeItem('mouseforge:remember-email');
       }
 
@@ -78,19 +79,19 @@ export function Login() {
         <form onSubmit={handleSubmit((data) => loginMutation(data))} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-              E-mail do operador
+              E-mail ou usuario
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
+              <UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
               <input
-                type="email"
+                type="text"
                 autoComplete="username"
-                {...register('email')}
+                {...register('login')}
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-600 transition-all text-base min-h-[44px]"
-                placeholder="admin@mouseforge.local"
+                placeholder="admin ou admin@mouseforge.local"
               />
             </div>
-            {errors.email && <p className="text-red-500 dark:text-red-400 text-xs mt-1.5 font-medium">{errors.email.message}</p>}
+            {errors.login && <p className="text-red-500 dark:text-red-400 text-xs mt-1.5 font-medium">{errors.login.message}</p>}
           </div>
 
           <div>

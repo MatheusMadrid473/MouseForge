@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db';
 import { users } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from '../auth/password';
 
 type AuthUser = {
@@ -21,12 +21,17 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.post('/auth/login', async (request, reply) => {
     const loginSchema = z.object({
-      email: z.string().email(),
+      login: z.string().min(3),
       password: z.string().min(6),
     });
 
-    const { email, password } = loginSchema.parse(request.body);
-    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const { login, password } = loginSchema.parse(request.body);
+    const normalizedLogin = login.trim().toLowerCase();
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(or(eq(users.email, normalizedLogin), eq(users.username, normalizedLogin)))
+      .limit(1);
 
     if (!user || !verifyPassword(password, user.password)) {
       return reply.status(401).send({ message: 'Credenciais invalidas.' });
@@ -40,6 +45,7 @@ export async function userRoutes(app: FastifyInstance) {
         id: user.id,
         name: user.name,
         email: user.email,
+        username: user.username,
         role: user.role,
       },
     };
@@ -55,6 +61,7 @@ export async function userRoutes(app: FastifyInstance) {
     const createUserSchema = z.object({
       name: z.string(),
       email: z.string().email(),
+      username: z.string().min(3).regex(/^[a-zA-Z0-9._-]+$/),
       password: z.string().min(6),
       role: z.enum(['admin', 'manager', 'cashier']),
     });
@@ -65,7 +72,8 @@ export async function userRoutes(app: FastifyInstance) {
       .insert(users)
       .values({
         name: body.name,
-        email: body.email,
+        email: body.email.toLowerCase(),
+        username: body.username.toLowerCase(),
         password: hashPassword(body.password),
         role: body.role,
         createdBy: loggedUser.id,
@@ -78,7 +86,13 @@ export async function userRoutes(app: FastifyInstance) {
     return reply.status(201).send(safeUser);
   });
 
-  app.get('/users', { preHandler: authenticate }, async () => {
+  app.get('/users', { preHandler: authenticate }, async (request, reply) => {
+    const loggedUser = request.user as AuthUser;
+
+    if (!canManageUsers(loggedUser)) {
+      return reply.status(403).send({ message: 'Usuario sem permissao para listar colaboradores.' });
+    }
+
     const userList = await db.select().from(users);
 
     return userList.map(({ password, ...user }) => user);
@@ -94,6 +108,7 @@ export async function userRoutes(app: FastifyInstance) {
     const paramsSchema = z.object({ id: z.string().uuid() });
     const updateUserSchema = z.object({
       name: z.string().optional(),
+      username: z.string().min(3).regex(/^[a-zA-Z0-9._-]+$/).optional(),
       role: z.enum(['admin', 'manager', 'cashier']).optional(),
     });
 
@@ -104,6 +119,7 @@ export async function userRoutes(app: FastifyInstance) {
       .update(users)
       .set({
         ...body,
+        username: body.username?.toLowerCase(),
         updatedAt: new Date(),
         updatedBy: loggedUser.id,
       })
