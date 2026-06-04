@@ -233,6 +233,31 @@ O roadmap tecnico e de produto esta documentado em [ROADMAP.md](./ROADMAP.md).
 
 ## Scripts
 
+## Versionamento
+
+O projeto usa versionamento semantico a partir de `0.0.0`, com commits convencionais:
+
+- `feat:` incrementa a versao minor. Exemplo: `0.8.0` para `0.9.0`.
+- `fix:` incrementa a versao patch. Exemplo: `0.8.0` para `0.8.1`.
+- `BREAKING CHANGE` ou `!:` incrementa a versao major.
+- `chore:`, `docs:`, `refactor:` e commits similares nao alteram a versao.
+
+A versao atual fica em `VERSION` e e sincronizada com `api`, `web` e as constantes exibidas no sistema. Para ativar o hook local:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Tambem e possivel sincronizar manualmente:
+
+```bash
+node scripts/update-version.cjs
+```
+
+---
+
+## Scripts
+
 ### API
 
 ```bash

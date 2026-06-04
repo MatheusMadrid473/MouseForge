@@ -6,6 +6,7 @@ import { systemRoutes } from './routes/system';
 import { operationRoutes } from './routes/operations';
 import { ensureSuperUser } from './bootstrap/super-user';
 import { ensureUserSchema } from './bootstrap/user-schema';
+import { APP_VERSION } from './version';
 import 'dotenv/config';
 
 const app = Fastify({
@@ -29,7 +30,7 @@ app.register(operationRoutes);
 app.get('/health', async () => ({
   status: 'ok',
   service: 'mouseforge-api',
-  deployCheck: 'api-render-supabase',
+  version: APP_VERSION,
   checkedAt: new Date().toISOString(),
 }));
 

@@ -36,6 +36,7 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '../hooks/useTheme';
 import { api } from '../lib/api';
+import { APP_VERSION } from '../version';
 
 type LoggedUser = {
   id?: string;
@@ -244,8 +245,6 @@ const roleLabels: Record<UserRole, string> = {
   manager: 'Gerente',
   cashier: 'Caixa',
 };
-
-const deployCheckLabel = 'Deploy check 2026-06-04';
 
 const paymentLabels: Record<PaymentMethod, string> = {
   pix: 'Pix',
@@ -2258,6 +2257,7 @@ export function Home() {
             <div>
               <p className="text-lg font-bold text-white">MouseForge</p>
               <p className="text-xs text-slate-500">PDV & Mercado</p>
+              <p className="mt-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-600">v{APP_VERSION}</p>
             </div>
           </div>
         </div>
@@ -2341,9 +2341,6 @@ export function Home() {
               </button>
               <span className="flex min-h-[44px] items-center rounded-lg bg-brand-600 px-4 text-xs font-bold text-white shadow-sm">
                 {getRoleLabel(userLogado.role)}
-              </span>
-              <span className="flex min-h-[44px] items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                {deployCheckLabel}
               </span>
             </div>
           </header>

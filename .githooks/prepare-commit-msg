@@ -1,0 +1,2 @@
+#!/bin/sh
+node scripts/update-version.cjs --message-file "$1"
