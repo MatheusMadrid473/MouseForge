@@ -26,6 +26,13 @@ app.register(userRoutes);
 app.register(systemRoutes);
 app.register(operationRoutes);
 
+app.get('/health', async () => ({
+  status: 'ok',
+  service: 'mouseforge-api',
+  deployCheck: 'api-render-supabase',
+  checkedAt: new Date().toISOString(),
+}));
+
 const start = async () => {
   try {
     const port = Number(process.env.PORT) || 3333;

@@ -245,6 +245,8 @@ const roleLabels: Record<UserRole, string> = {
   cashier: 'Caixa',
 };
 
+const deployCheckLabel = 'Deploy check 2026-06-04';
+
 const paymentLabels: Record<PaymentMethod, string> = {
   pix: 'Pix',
   debit: 'Debito',
@@ -2339,6 +2341,9 @@ export function Home() {
               </button>
               <span className="flex min-h-[44px] items-center rounded-lg bg-brand-600 px-4 text-xs font-bold text-white shadow-sm">
                 {getRoleLabel(userLogado.role)}
+              </span>
+              <span className="flex min-h-[44px] items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                {deployCheckLabel}
               </span>
             </div>
           </header>
