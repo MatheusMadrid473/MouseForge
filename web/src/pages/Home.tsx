@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronDown,
   CreditCard,
+  Download,
   Edit,
   FileCheck2,
   FileText,
@@ -26,6 +27,7 @@ import {
   Sun,
   Trash2,
   TrendingUp,
+  Upload,
   Users,
   WalletCards,
   X,
@@ -112,6 +114,94 @@ type TermAcceptanceReport = {
   users: TermAcceptanceUser[];
 };
 
+type Product = {
+  id: string;
+  companyId: string;
+  branchId?: string | null;
+  name: string;
+  barcode?: string | null;
+  sku?: string | null;
+  category?: string | null;
+  unit: string;
+  salePriceCents: number;
+  costPriceCents: number;
+  minStock: number;
+  currentStock: number;
+  ncm?: string | null;
+  isActive: boolean;
+};
+
+type Customer = {
+  id: string;
+  name: string;
+  document?: string | null;
+  phone?: string | null;
+  email?: string | null;
+};
+
+type Sale = {
+  id: string;
+  totalCents: number;
+  paymentMethod: PaymentMethod;
+  createdAt: string;
+  status: 'completed' | 'cancelled';
+};
+
+type FiscalDocument = {
+  id: string;
+  saleId?: string | null;
+  type: 'nfce' | 'nfe';
+  status: 'draft' | 'pending' | 'authorized' | 'rejected' | 'cancelled';
+  number?: string | null;
+  series?: string | null;
+  accessKey?: string | null;
+  protocol?: string | null;
+  errorMessage?: string | null;
+  totalCents: number;
+  createdAt: string;
+};
+
+type FiscalSetting = {
+  id: string;
+  companyId: string;
+  branchId?: string | null;
+  provider: 'manual' | 'focus' | 'nfeio' | 'tecnospeed' | 'plugnotas';
+  environment: 'homologation' | 'production';
+  uf?: string | null;
+  stateRegistration?: string | null;
+  legalName?: string | null;
+  cscId?: string | null;
+  cscSecretRef?: string | null;
+  certificateRef?: string | null;
+  nfceSeries: string;
+  nextNfceNumber: number;
+  isActive: boolean;
+};
+
+type DashboardData = {
+  summary: {
+    salesTodayCents: number;
+    salesCount: number;
+    averageTicketCents: number;
+    criticalStock: number;
+    pendingFiscal: number;
+  };
+  paymentTotals: Record<string, number>;
+  recentSales: Sale[];
+  criticalProducts: Product[];
+  auditLogs: Array<{ id: string; action: string; entity: string; summary?: string | null; createdAt: string }>;
+};
+
+type PeriodReport = {
+  totalCents: number;
+  salesCount: number;
+  averageTicketCents: number;
+  byPayment: Record<string, number>;
+  sales: Sale[];
+};
+
+type PaymentMethod = 'pix' | 'debit' | 'credit' | 'cash' | 'voucher' | 'mixed';
+
 type UserFormState = {
   id?: string;
   name: string;
@@ -155,60 +245,41 @@ const roleLabels: Record<UserRole, string> = {
   cashier: 'Caixa',
 };
 
-const summaryCards = [
-  {
-    label: 'Vendas hoje',
-    value: 'R$ 4.892',
-    helper: '+12% vs ontem',
-    icon: ShoppingCart,
-    tone: 'text-brand-600 bg-brand-600/10 dark:text-brand-300 dark:bg-brand-500/15',
-  },
-  {
-    label: 'Cupons emitidos',
-    value: '128',
-    helper: 'NFC-e autorizadas',
-    icon: ReceiptText,
-    tone: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-300 dark:bg-emerald-500/15',
-  },
-  {
-    label: 'Ticket medio',
-    value: 'R$ 38,21',
-    helper: 'Mercado varejo',
-    icon: CreditCard,
-    tone: 'text-amber-600 bg-amber-500/10 dark:text-amber-300 dark:bg-amber-500/15',
-  },
-  {
-    label: 'Estoque critico',
-    value: '14',
-    helper: 'Itens para repor',
-    icon: Boxes,
-    tone: 'text-rose-600 bg-rose-500/10 dark:text-rose-300 dark:bg-rose-500/15',
-  },
-];
+const paymentLabels: Record<PaymentMethod, string> = {
+  pix: 'Pix',
+  debit: 'Debito',
+  credit: 'Credito',
+  cash: 'Dinheiro',
+  voucher: 'Voucher',
+  mixed: 'Misto',
+};
 
-const salesTrend = [
-  { label: 'Seg', value: 42 },
-  { label: 'Ter', value: 58 },
-  { label: 'Qua', value: 51 },
-  { label: 'Qui', value: 74 },
-  { label: 'Sex', value: 86 },
-  { label: 'Sab', value: 68 },
-  { label: 'Dom', value: 39 },
-];
+const fiscalStatusLabels: Record<FiscalDocument['status'], string> = {
+  draft: 'Rascunho',
+  pending: 'Pendente',
+  authorized: 'Autorizada',
+  rejected: 'Rejeitada',
+  cancelled: 'Cancelada',
+};
 
-const paymentMix = [
-  { label: 'Pix', value: '38%', color: 'bg-emerald-500' },
-  { label: 'Debito', value: '27%', color: 'bg-brand-600' },
-  { label: 'Credito', value: '24%', color: 'bg-violet-500' },
-  { label: 'Dinheiro', value: '11%', color: 'bg-amber-500' },
-];
+function formatMoney(cents = 0) {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
-const recentActivity = [
-  { id: 'CX-1042', title: 'Venda finalizada', detail: 'Operador Caixa 01 - Pix', value: 'R$ 86,40', status: 'Autorizada' },
-  { id: 'CX-1041', title: 'Sangria registrada', detail: 'Retirada para cofre', value: 'R$ 500,00', status: 'Conferir' },
-  { id: 'NF-9128', title: 'NFC-e transmitida', detail: 'Ambiente de producao', value: '2 itens', status: 'Sefaz' },
-  { id: 'ES-2207', title: 'Estoque baixo', detail: 'Arroz 5kg - corredor 03', value: '6 un', status: 'Repor' },
-];
+function parseMoneyToCents(value: string) {
+  const normalized = value.replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
+  return Math.round(Number(normalized || 0) * 100);
+}
+
+function downloadText(filename: string, content: string, type = 'text/csv;charset=utf-8') {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 const previewConfigs: Record<PreviewView, PreviewConfig> = {
   cashier: {
@@ -456,10 +527,25 @@ function PreviewView({ view }: { view: PreviewView }) {
 }
 
 function DashboardView() {
+  const { data, isLoading } = useQuery<DashboardData>({
+    queryKey: ['dashboard'],
+    queryFn: async () => {
+      const response = await api.get('/dashboard');
+      return response.data;
+    },
+  });
+  const summary = data?.summary;
+  const paymentRows = Object.entries(data?.paymentTotals || {});
+
   return (
     <>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => {
+        {[
+          { label: 'Vendas hoje', value: formatMoney(summary?.salesTodayCents || 0), helper: `${summary?.salesCount || 0} cupons`, icon: ShoppingCart, tone: 'text-brand-600 bg-brand-600/10 dark:text-brand-300 dark:bg-brand-500/15' },
+          { label: 'Ticket medio', value: formatMoney(summary?.averageTicketCents || 0), helper: 'Por venda finalizada', icon: CreditCard, tone: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-300 dark:bg-emerald-500/15' },
+          { label: 'Estoque critico', value: String(summary?.criticalStock || 0), helper: 'Produtos abaixo do minimo', icon: Boxes, tone: 'text-rose-600 bg-rose-500/10 dark:text-rose-300 dark:bg-rose-500/15' },
+          { label: 'Fiscal pendente', value: String(summary?.pendingFiscal || 0), helper: 'NFC-e/NF-e para tratar', icon: FileText, tone: 'text-amber-600 bg-amber-500/10 dark:text-amber-300 dark:bg-amber-500/15' },
+        ].map((card) => {
           const Icon = card.icon;
 
           return (
@@ -484,20 +570,30 @@ function DashboardView() {
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="text-brand-600 dark:text-brand-400" size={19} />
-              <h2 className="text-base font-bold text-slate-950 dark:text-white">Historico de vendas</h2>
+              <h2 className="text-base font-bold text-slate-950 dark:text-white">Vendas recentes</h2>
             </div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ultimos 7 dias</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Hoje</span>
           </div>
 
-          <div className="flex h-72 items-end gap-3 border-b border-l border-slate-200 px-3 pb-4 dark:border-slate-800">
-            {salesTrend.map((item) => (
-              <div key={item.label} className="flex h-full flex-1 flex-col justify-end gap-3">
-                <div className="relative flex flex-1 items-end">
-                  <div className="w-full rounded-t-lg bg-brand-500/85 transition-all hover:bg-brand-600" style={{ height: `${item.value}%` }} />
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {isLoading ? (
+              <p className="py-10 text-center text-sm text-slate-500">Carregando dashboard...</p>
+            ) : (data?.recentSales || []).length === 0 ? (
+              <p className="py-10 text-center text-sm text-slate-500">Nenhuma venda finalizada hoje.</p>
+            ) : (
+              data?.recentSales.map((sale) => (
+                <div key={sale.id} className="grid gap-3 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:items-center">
+                  <div>
+                    <p className="font-bold text-slate-950 dark:text-white">Venda {sale.id.slice(0, 8)}</p>
+                    <p className="text-xs text-slate-500">{new Date(sale.createdAt).toLocaleString('pt-BR')} - {paymentLabels[sale.paymentMethod]}</p>
+                  </div>
+                  <span className="font-bold text-slate-950 dark:text-white">{formatMoney(sale.totalCents)}</span>
+                  <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                    Finalizada
+                  </span>
                 </div>
-                <p className="text-center text-xs font-semibold text-slate-500 dark:text-slate-400">{item.label}</p>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </article>
 
@@ -507,55 +603,565 @@ function DashboardView() {
             <h2 className="text-base font-bold text-slate-950 dark:text-white">Meios de pagamento</h2>
           </div>
 
-          <div className="mx-auto mb-7 grid h-44 w-44 place-items-center rounded-full bg-[conic-gradient(#10b981_0_38%,#244aa5_38%_65%,#8b5cf6_65%_89%,#f59e0b_89%_100%)]">
-            <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner dark:bg-slate-900">
-              <span className="text-2xl font-extrabold text-slate-950 dark:text-white">128</span>
-              <span className="-mt-2 text-[11px] font-semibold text-slate-500">vendas</span>
-            </div>
-          </div>
-
           <div className="space-y-3">
-            {paymentMix.map((item) => (
-              <div key={item.label} className="flex items-center justify-between text-sm">
+            {paymentRows.length === 0 ? (
+              <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-950">Sem pagamentos registrados hoje.</p>
+            ) : (
+              paymentRows.map(([method, value]) => (
+              <div key={method} className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300">
-                  <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
-                  {item.label}
+                  <span className="h-2.5 w-2.5 rounded-full bg-brand-600" />
+                  {paymentLabels[method as PaymentMethod] || method}
                 </span>
-                <span className="font-bold text-slate-950 dark:text-white">{item.value}</span>
+                <span className="font-bold text-slate-950 dark:text-white">{formatMoney(value)}</span>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </article>
       </section>
 
-      <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="mt-6 grid gap-6 xl:grid-cols-2">
+        <article className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <ReceiptText className="text-brand-600 dark:text-brand-400" size={19} />
-            <h2 className="text-base font-bold text-slate-950 dark:text-white">Monitoramento operacional</h2>
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Rastreabilidade recente</h2>
           </div>
-          <span className="w-fit rounded-full border border-slate-200 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            Tempo real
-          </span>
         </div>
 
         <div className="divide-y divide-slate-200 dark:divide-slate-800">
-          {recentActivity.map((activity) => (
-            <div key={activity.id} className="grid gap-3 px-6 py-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_120px_120px] sm:items-center">
-              <span className="font-bold text-brand-600 dark:text-brand-400">{activity.id}</span>
+          {(data?.auditLogs || []).map((activity) => (
+            <div key={activity.id} className="grid gap-3 px-6 py-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_150px] sm:items-center">
+              <span className="font-bold text-brand-600 dark:text-brand-400">{activity.entity}</span>
               <div>
-                <p className="font-bold text-slate-950 dark:text-white">{activity.title}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
+                <p className="font-bold text-slate-950 dark:text-white">{activity.action}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{activity.summary || 'Evento operacional'}</p>
               </div>
-              <span className="font-bold text-slate-950 dark:text-white">{activity.value}</span>
-              <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                {activity.status}
-              </span>
+              <span className="text-xs font-semibold text-slate-500">{new Date(activity.createdAt).toLocaleString('pt-BR')}</span>
             </div>
           ))}
+          {(data?.auditLogs || []).length === 0 && <p className="px-6 py-8 text-center text-sm text-slate-500">Nenhum evento rastreado ainda.</p>}
         </div>
+        </article>
+
+        <article className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Estoque critico</h2>
+          </div>
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {(data?.criticalProducts || []).map((product) => (
+              <div key={product.id} className="grid gap-2 px-6 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                <div>
+                  <p className="font-bold text-slate-950 dark:text-white">{product.name}</p>
+                  <p className="text-xs text-slate-500">{product.barcode || product.category || 'Produto cadastrado'}</p>
+                </div>
+                <span className="font-bold text-rose-600 dark:text-rose-300">{product.currentStock} {product.unit}</span>
+              </div>
+            ))}
+            {(data?.criticalProducts || []).length === 0 && <p className="px-6 py-8 text-center text-sm text-slate-500">Nenhum produto critico.</p>}
+          </div>
+        </article>
       </section>
     </>
+  );
+}
+
+function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [form, setForm] = useState({ name: '', barcode: '', category: '', unit: 'un', salePrice: '', costPrice: '', minStock: '0', currentStock: '0', ncm: '', companyId: loggedUser.companyId || '', branchId: loggedUser.branchId || '' });
+
+  const { data: productsList = [] } = useQuery<Product[]>({
+    queryKey: ['products', search],
+    queryFn: async () => {
+      const response = await api.get('/products', { params: { search: search || undefined } });
+      return response.data;
+    },
+  });
+  const { data: companies = [] } = useQuery<Company[]>({ queryKey: ['companies'], queryFn: async () => (await api.get('/companies')).data, enabled: !!loggedUser.isMaster });
+  const { data: branches = [] } = useQuery<Branch[]>({ queryKey: ['branches'], queryFn: async () => (await api.get('/branches')).data, enabled: !!loggedUser.isMaster });
+
+  const saveProduct = useMutation({
+    mutationFn: async () => api.post('/products', {
+      companyId: form.companyId || undefined,
+      branchId: form.branchId || undefined,
+      name: form.name,
+      barcode: form.barcode,
+      category: form.category,
+      unit: form.unit,
+      salePriceCents: parseMoneyToCents(form.salePrice),
+      costPriceCents: parseMoneyToCents(form.costPrice),
+      minStock: Number(form.minStock || 0),
+      currentStock: Number(form.currentStock || 0),
+      ncm: form.ncm,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setForm({ name: '', barcode: '', category: '', unit: 'un', salePrice: '', costPrice: '', minStock: '0', currentStock: '0', ncm: '', companyId: form.companyId, branchId: form.branchId });
+      toast.success('Produto cadastrado.');
+    },
+    onError: () => toast.error('Nao foi possivel salvar o produto.'),
+  });
+
+  const importProducts = async (file?: File) => {
+    if (!file) return;
+    const csv = await file.text();
+    await api.post('/products/import', { csv, companyId: form.companyId || undefined, branchId: form.branchId || undefined });
+    queryClient.invalidateQueries({ queryKey: ['products'] });
+    toast.success('Importacao concluida.');
+  };
+
+  const exportProducts = async () => {
+    const response = await api.get('/products/export', { responseType: 'text' });
+    downloadText('produtos-mouseforge.csv', response.data);
+  };
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Produtos</h2>
+          <p className="mt-1 text-sm text-slate-500">Cadastro rapido com codigo de barras, preco, estoque e fiscal basico.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 dark:border-slate-800 dark:text-slate-200">
+            <Upload size={17} />
+            Importar CSV
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => importProducts(event.target.files?.[0])} />
+          </label>
+          <button type="button" onClick={exportProducts} className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700 dark:border-slate-800 dark:text-slate-200">
+            <Download size={17} />
+            Exportar
+          </button>
+        </div>
+      </div>
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!form.name.trim() || !form.salePrice) {
+            toast.error('Informe nome e preco de venda.');
+            return;
+          }
+          saveProduct.mutate();
+        }}
+        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="grid gap-3 md:grid-cols-4">
+          {loggedUser.isMaster && (
+            <>
+              <select value={form.companyId} onChange={(event) => setForm((current) => ({ ...current, companyId: event.target.value, branchId: '' }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+                <option value="">Empresa</option>
+                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+              </select>
+              <select value={form.branchId} onChange={(event) => setForm((current) => ({ ...current, branchId: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+                <option value="">Todas as filiais</option>
+                {branches.filter((branch) => branch.companyId === form.companyId).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </>
+          )}
+          <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Nome do produto" />
+          <input value={form.barcode} onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Codigo de barras" />
+          <input value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Categoria" />
+          <input value={form.salePrice} onChange={(event) => setForm((current) => ({ ...current, salePrice: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Preco venda" />
+          <input value={form.costPrice} onChange={(event) => setForm((current) => ({ ...current, costPrice: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Custo" />
+          <input value={form.currentStock} onChange={(event) => setForm((current) => ({ ...current, currentStock: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Estoque" />
+          <input value={form.minStock} onChange={(event) => setForm((current) => ({ ...current, minStock: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Minimo" />
+          <input value={form.ncm} onChange={(event) => setForm((current) => ({ ...current, ncm: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="NCM" />
+          <button type="submit" className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-bold text-white">
+            <Plus size={17} />
+            Salvar
+          </button>
+        </div>
+      </form>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 p-5 dark:border-slate-800">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Buscar por nome, codigo ou SKU" />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/50">
+              <tr><th className="px-5 py-4">Produto</th><th>Categoria</th><th>Preco</th><th>Estoque</th><th>NCM</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {productsList.map((product) => (
+                <tr key={product.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                  <td className="px-5 py-4"><p className="font-bold text-slate-950 dark:text-white">{product.name}</p><p className="text-xs text-slate-500">{product.barcode || product.sku || '-'}</p></td>
+                  <td>{product.category || '-'}</td>
+                  <td className="font-bold">{formatMoney(product.salePriceCents)}</td>
+                  <td className={product.currentStock <= product.minStock ? 'font-bold text-rose-600' : 'font-semibold'}>{product.currentStock} {product.unit}</td>
+                  <td>{product.ncm || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CustomersView() {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [form, setForm] = useState({ name: '', document: '', phone: '', email: '' });
+  const { data: customersList = [] } = useQuery<Customer[]>({ queryKey: ['customers', search], queryFn: async () => (await api.get('/customers', { params: { search: search || undefined } })).data });
+  const saveCustomer = useMutation({
+    mutationFn: async () => api.post('/customers', form),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setForm({ name: '', document: '', phone: '', email: '' });
+      toast.success('Cliente salvo.');
+    },
+  });
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Clientes</h2>
+        <p className="mt-1 text-sm text-slate-500">Cadastro rapido para venda identificada, CPF/CNPJ e contato.</p>
+      </div>
+      <form onSubmit={(event) => { event.preventDefault(); saveCustomer.mutate(); }} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-5">
+        <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950 md:col-span-2" placeholder="Nome" />
+        <input value={form.document} onChange={(event) => setForm((current) => ({ ...current, document: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="CPF/CNPJ" />
+        <input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Telefone" />
+        <button className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-bold text-white">Salvar</button>
+      </form>
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="p-5"><input value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-[44px] w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Pesquisar cliente" /></div>
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          {customersList.map((customer) => <div key={customer.id} className="grid gap-2 px-5 py-4 text-sm md:grid-cols-[minmax(0,1fr)_160px_160px]"><strong>{customer.name}</strong><span>{customer.document || '-'}</span><span>{customer.phone || '-'}</span></div>)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StockView() {
+  const queryClient = useQueryClient();
+  const [movement, setMovement] = useState({ productId: '', type: 'entry', quantity: '1', reason: '' });
+  const { data: productsList = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: async () => (await api.get('/products')).data });
+  const { data: movements = [] } = useQuery<Array<{ id: string; productId: string; type: string; quantity: number; reason?: string; createdAt: string }>>({ queryKey: ['stock-movements'], queryFn: async () => (await api.get('/stock/movements')).data });
+  const saveMovement = useMutation({
+    mutationFn: async () => api.post('/stock/movements', { ...movement, quantity: Number(movement.quantity) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Estoque atualizado.');
+    },
+  });
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Estoque</h2>
+        <p className="mt-1 text-sm text-slate-500">Entradas, perdas e ajustes com rastreabilidade.</p>
+      </div>
+      <form onSubmit={(event) => { event.preventDefault(); saveMovement.mutate(); }} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-5">
+        <select value={movement.productId} onChange={(event) => setMovement((current) => ({ ...current, productId: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950 md:col-span-2">
+          <option value="">Produto</option>
+          {productsList.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+        </select>
+        <select value={movement.type} onChange={(event) => setMovement((current) => ({ ...current, type: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+          <option value="entry">Entrada</option>
+          <option value="loss">Perda</option>
+          <option value="adjustment">Ajuste</option>
+        </select>
+        <input value={movement.quantity} onChange={(event) => setMovement((current) => ({ ...current, quantity: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Qtd" />
+        <button className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-bold text-white">Registrar</button>
+      </form>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-4 font-bold dark:border-slate-800">Saldos</div>
+          {productsList.map((product) => <div key={product.id} className="flex justify-between border-b border-slate-100 px-5 py-3 text-sm dark:border-slate-800"><span>{product.name}</span><strong className={product.currentStock <= product.minStock ? 'text-rose-600' : ''}>{product.currentStock} {product.unit}</strong></div>)}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-4 font-bold dark:border-slate-800">Ultimas movimentacoes</div>
+          {movements.map((item) => <div key={item.id} className="flex justify-between border-b border-slate-100 px-5 py-3 text-sm dark:border-slate-800"><span>{item.type}</span><strong>{item.quantity}</strong></div>)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CashierView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
+  const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([]);
+  const { data: productsList = [] } = useQuery<Product[]>({ queryKey: ['products', search], queryFn: async () => (await api.get('/products', { params: { search: search || undefined } })).data });
+  const totalCents = cart.reduce((total, item) => total + item.product.salePriceCents * item.quantity, 0);
+  const finishSale = useMutation({
+    mutationFn: async () => api.post('/sales', { paymentMethod, items: cart.map((item) => ({ productId: item.product.id, quantity: item.quantity })), companyId: loggedUser.companyId || undefined, branchId: loggedUser.branchId || undefined }),
+    onSuccess: () => {
+      setCart([]);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Venda finalizada e documento fiscal pendente criado.');
+    },
+    onError: () => toast.error('Nao foi possivel finalizar a venda.'),
+  });
+
+  const addToCart = (product: Product) => {
+    setCart((current) => {
+      const existing = current.find((item) => item.product.id === product.id);
+      if (existing) {
+        return current.map((item) => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...current, { product, quantity: 1 }];
+    });
+  };
+
+  return (
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_420px]">
+      <div className="space-y-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Frente de caixa</h2>
+          <p className="mt-1 text-sm text-slate-500">Busque pelo nome ou codigo, adicione e finalize rapido.</p>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} className="mt-4 min-h-[48px] w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Buscar produto ou bipar codigo de barras" autoFocus />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {productsList.slice(0, 20).map((product) => (
+            <button key={product.id} type="button" onClick={() => addToCart(product)} className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-brand-500 dark:border-slate-800 dark:bg-slate-900">
+              <p className="font-bold text-slate-950 dark:text-white">{product.name}</p>
+              <p className="text-xs text-slate-500">{product.barcode || product.category || 'Sem codigo'}</p>
+              <p className="mt-3 text-lg font-extrabold text-brand-600">{formatMoney(product.salePriceCents)}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+      <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-lg font-extrabold text-slate-950 dark:text-white">Carrinho</h3>
+        <div className="mt-4 divide-y divide-slate-200 dark:divide-slate-800">
+          {cart.map((item) => <div key={item.product.id} className="flex justify-between py-3 text-sm"><span>{item.quantity}x {item.product.name}</span><strong>{formatMoney(item.product.salePriceCents * item.quantity)}</strong></div>)}
+          {cart.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Nenhum item.</p>}
+        </div>
+        <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} className="mt-5 min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+          {Object.entries(paymentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <div className="mt-5 flex items-center justify-between text-xl font-extrabold"><span>Total</span><span>{formatMoney(totalCents)}</span></div>
+        <button disabled={cart.length === 0 || finishSale.isPending} onClick={() => finishSale.mutate()} className="mt-5 min-h-[48px] w-full rounded-lg bg-brand-600 px-4 text-sm font-bold text-white disabled:bg-slate-300">Finalizar venda</button>
+      </aside>
+    </section>
+  );
+}
+
+function FiscalView() {
+  const queryClient = useQueryClient();
+  const { data: documents = [] } = useQuery<FiscalDocument[]>({ queryKey: ['fiscal-documents'], queryFn: async () => (await api.get('/fiscal-documents')).data });
+  const issueDocument = useMutation({
+    mutationFn: async (id: string) => api.post(`/fiscal-documents/${id}/issue`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Documento fiscal processado.');
+    },
+    onError: () => toast.error('Nao foi possivel emitir o documento fiscal.'),
+  });
+  const updateDocument = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: FiscalDocument['status'] }) => api.put(`/fiscal-documents/${id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Notas fiscais</h2>
+        <p className="mt-1 text-sm text-slate-500">Controle operacional de NFC-e/NF-e. A transmissao real depende de certificado, CSC e integracao fiscal.</p>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        {documents.map((document) => (
+          <div key={document.id} className="grid gap-3 border-b border-slate-200 px-5 py-4 text-sm dark:border-slate-800 md:grid-cols-[120px_minmax(0,1fr)_140px_180px_120px] md:items-center">
+            <strong>{document.type.toUpperCase()}</strong>
+            <span>
+              Venda {document.saleId?.slice(0, 8) || '-'} - {formatMoney(document.totalCents)}
+              {document.accessKey && <small className="block text-xs text-slate-500">Chave {document.accessKey}</small>}
+              {document.errorMessage && <small className="block text-xs text-rose-600">{document.errorMessage}</small>}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{fiscalStatusLabels[document.status]}</span>
+            <select value={document.status} onChange={(event) => updateDocument.mutate({ id: document.id, status: event.target.value as FiscalDocument['status'] })} className="min-h-[40px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+              <option value="pending">Pendente</option>
+              <option value="authorized">Autorizada</option>
+              <option value="rejected">Rejeitada</option>
+              <option value="cancelled">Cancelada</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => issueDocument.mutate(document.id)}
+              disabled={document.status === 'authorized' || document.status === 'cancelled' || issueDocument.isPending}
+              className="min-h-[40px] rounded-lg bg-brand-600 px-3 text-xs font-bold text-white disabled:bg-slate-300 dark:disabled:bg-slate-800"
+            >
+              Emitir
+            </button>
+          </div>
+        ))}
+        {documents.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-500">Nenhum documento fiscal criado.</p>}
+      </div>
+    </section>
+  );
+}
+
+function ReportsView() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [period, setPeriod] = useState({ start: today, end: today });
+  const { data } = useQuery<PeriodReport>({ queryKey: ['period-report', period], queryFn: async () => (await api.get('/reports/period', { params: period })).data });
+  const exportReport = () => {
+    const csv = ['data,total,forma', ...(data?.sales || []).map((sale) => `${sale.createdAt},${sale.totalCents / 100},${sale.paymentMethod}`)].join('\n');
+    downloadText('relatorio-vendas.csv', csv);
+  };
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Relatorios por periodo</h2>
+          <p className="mt-1 text-sm text-slate-500">Vendas consolidadas por periodo, forma de pagamento e filial conforme permissao.</p>
+        </div>
+        <button onClick={exportReport} className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold dark:border-slate-800"><Download size={17} />Exportar</button>
+      </div>
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-2">
+        <input type="date" value={period.start} onChange={(event) => setPeriod((current) => ({ ...current, start: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" />
+        <input type="date" value={period.end} onChange={(event) => setPeriod((current) => ({ ...current, end: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><p className="text-xs font-bold uppercase text-slate-500">Total</p><p className="mt-2 text-2xl font-extrabold">{formatMoney(data?.totalCents || 0)}</p></article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><p className="text-xs font-bold uppercase text-slate-500">Vendas</p><p className="mt-2 text-2xl font-extrabold">{data?.salesCount || 0}</p></article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><p className="text-xs font-bold uppercase text-slate-500">Ticket medio</p><p className="mt-2 text-2xl font-extrabold">{formatMoney(data?.averageTicketCents || 0)}</p></article>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        {(data?.sales || []).map((sale) => <div key={sale.id} className="grid gap-2 border-b border-slate-100 px-5 py-4 text-sm dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_120px_120px]"><span>{new Date(sale.createdAt).toLocaleString('pt-BR')}</span><strong>{paymentLabels[sale.paymentMethod]}</strong><strong>{formatMoney(sale.totalCents)}</strong></div>)}
+      </div>
+    </section>
+  );
+}
+
+function FinanceView() {
+  return <ReportsView />;
+}
+
+function SettingsView({ loggedUser }: { loggedUser: LoggedUser }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({
+    companyId: loggedUser.companyId || '',
+    branchId: loggedUser.branchId || '',
+    provider: 'manual',
+    environment: 'homologation',
+    uf: '',
+    legalName: '',
+    stateRegistration: '',
+    cscId: '',
+    cscSecretRef: '',
+    certificateRef: '',
+    nfceSeries: '1',
+    nextNfceNumber: '1',
+  });
+  const { data: settings = [] } = useQuery<FiscalSetting[]>({ queryKey: ['fiscal-settings'], queryFn: async () => (await api.get('/fiscal-settings')).data });
+  const { data: companies = [] } = useQuery<Company[]>({ queryKey: ['companies'], queryFn: async () => (await api.get('/companies')).data, enabled: !!loggedUser.isMaster });
+  const { data: branches = [] } = useQuery<Branch[]>({ queryKey: ['branches'], queryFn: async () => (await api.get('/branches')).data, enabled: !!loggedUser.isMaster });
+  const saveSetting = useMutation({
+    mutationFn: async () => api.put('/fiscal-settings', {
+      ...form,
+      companyId: form.companyId || undefined,
+      branchId: form.branchId || undefined,
+      nextNfceNumber: Number(form.nextNfceNumber || 1),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-settings'] });
+      toast.success('Configuracao fiscal salva.');
+    },
+    onError: () => toast.error('Nao foi possivel salvar configuracao fiscal.'),
+  });
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-2xl font-extrabold text-slate-950 dark:text-white">Configuracoes fiscais</h2>
+        <p className="mt-2 text-sm text-slate-500">Configure NFC-e por empresa/filial. O modo manual em homologacao simula autorizacao para testar o fluxo; producao exige provedor fiscal real.</p>
+      </div>
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          saveSetting.mutate();
+        }}
+        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="grid gap-3 md:grid-cols-3">
+          {loggedUser.isMaster && (
+            <>
+              <select value={form.companyId} onChange={(event) => setForm((current) => ({ ...current, companyId: event.target.value, branchId: '' }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+                <option value="">Empresa</option>
+                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+              </select>
+              <select value={form.branchId} onChange={(event) => setForm((current) => ({ ...current, branchId: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+                <option value="">Todas as filiais</option>
+                {branches.filter((branch) => branch.companyId === form.companyId).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </>
+          )}
+          <select value={form.provider} onChange={(event) => setForm((current) => ({ ...current, provider: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+            <option value="manual">Manual/homologacao</option>
+            <option value="focus">Focus NFe</option>
+            <option value="nfeio">NFE.io</option>
+            <option value="tecnospeed">TecnoSpeed</option>
+            <option value="plugnotas">PlugNotas</option>
+          </select>
+          <select value={form.environment} onChange={(event) => setForm((current) => ({ ...current, environment: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950">
+            <option value="homologation">Homologacao</option>
+            <option value="production">Producao</option>
+          </select>
+          <input value={form.uf} onChange={(event) => setForm((current) => ({ ...current, uf: event.target.value.toUpperCase().slice(0, 2) }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="UF" />
+          <input value={form.legalName} onChange={(event) => setForm((current) => ({ ...current, legalName: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950 md:col-span-2" placeholder="Razao social" />
+          <input value={form.stateRegistration} onChange={(event) => setForm((current) => ({ ...current, stateRegistration: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Inscricao estadual" />
+          <input value={form.cscId} onChange={(event) => setForm((current) => ({ ...current, cscId: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="ID CSC" />
+          <input value={form.cscSecretRef} onChange={(event) => setForm((current) => ({ ...current, cscSecretRef: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Referencia do segredo CSC" />
+          <input value={form.certificateRef} onChange={(event) => setForm((current) => ({ ...current, certificateRef: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Referencia certificado A1" />
+          <input value={form.nfceSeries} onChange={(event) => setForm((current) => ({ ...current, nfceSeries: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Serie NFC-e" />
+          <input value={form.nextNfceNumber} onChange={(event) => setForm((current) => ({ ...current, nextNfceNumber: event.target.value }))} className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" placeholder="Proximo numero" />
+          <button type="submit" className="min-h-[44px] rounded-lg bg-brand-600 px-4 text-sm font-bold text-white">Salvar fiscal</button>
+        </div>
+      </form>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 px-5 py-4 font-bold dark:border-slate-800">Configuracoes salvas</div>
+        {settings.map((setting) => (
+          <button
+            type="button"
+            key={setting.id}
+            onClick={() => setForm({
+              companyId: setting.companyId,
+              branchId: setting.branchId || '',
+              provider: setting.provider,
+              environment: setting.environment,
+              uf: setting.uf || '',
+              legalName: setting.legalName || '',
+              stateRegistration: setting.stateRegistration || '',
+              cscId: setting.cscId || '',
+              cscSecretRef: setting.cscSecretRef || '',
+              certificateRef: setting.certificateRef || '',
+              nfceSeries: setting.nfceSeries,
+              nextNfceNumber: String(setting.nextNfceNumber),
+            })}
+            className="grid w-full gap-2 border-b border-slate-100 px-5 py-4 text-left text-sm hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800 md:grid-cols-[minmax(0,1fr)_150px_150px]"
+          >
+            <span className="font-bold">{setting.legalName || 'Configuracao fiscal'}</span>
+            <span>{setting.provider}</span>
+            <span>{setting.environment === 'production' ? 'Producao' : 'Homologacao'}</span>
+          </button>
+        ))}
+        {settings.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">Nenhuma configuracao fiscal cadastrada.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -1741,14 +2347,14 @@ export function Home() {
           {activeView === 'companies' && <CompaniesView loggedUser={userLogado} />}
           {activeView === 'terms' && <TermsView loggedUser={userLogado} />}
           {activeView === 'users' && <UsersView loggedUser={userLogado} />}
-          {activeView === 'cashier' && <PreviewView view="cashier" />}
-          {activeView === 'fiscal' && <PreviewView view="fiscal" />}
-          {activeView === 'finance' && <PreviewView view="finance" />}
-          {activeView === 'products' && <PreviewView view="products" />}
-          {activeView === 'stock' && <PreviewView view="stock" />}
-          {activeView === 'customers' && <PreviewView view="customers" />}
-          {activeView === 'reports' && <PreviewView view="reports" />}
-          {activeView === 'settings' && <PreviewView view="settings" />}
+          {activeView === 'cashier' && <CashierView loggedUser={userLogado} />}
+          {activeView === 'fiscal' && <FiscalView />}
+          {activeView === 'finance' && <FinanceView />}
+          {activeView === 'products' && <ProductsView loggedUser={userLogado} />}
+          {activeView === 'stock' && <StockView />}
+          {activeView === 'customers' && <CustomersView />}
+          {activeView === 'reports' && <ReportsView />}
+          {activeView === 'settings' && <SettingsView loggedUser={userLogado} />}
         </div>
       </main>
       <TermsAcceptanceGate />

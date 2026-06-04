@@ -216,6 +216,8 @@ MouseForge/
 
 ## Roadmap
 
+O roadmap tecnico e de produto esta documentado em [ROADMAP.md](./ROADMAP.md).
+
 - [ ] Cadastro completo de produtos
 - [ ] Leitura por codigo de barras
 - [ ] Carrinho e fluxo real de venda
