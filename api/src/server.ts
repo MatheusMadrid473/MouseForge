@@ -9,6 +9,12 @@ import { ensureUserSchema } from './bootstrap/user-schema';
 import { APP_VERSION } from './version';
 import 'dotenv/config';
 
+const jwtSecret = process.env.JWT_SECRET;
+
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET nao foi informado nas variaveis de ambiente.');
+}
+
 const app = Fastify({
   logger: true,
 });
@@ -20,7 +26,7 @@ app.register(cors, {
 });
 
 app.register(jwt, {
-  secret: process.env.JWT_SECRET || 'mouseforge-secret-key-local',
+  secret: jwtSecret,
 });
 
 app.register(userRoutes);

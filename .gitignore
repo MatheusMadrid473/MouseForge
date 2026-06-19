@@ -1,5 +1,16 @@
 node_modules/
 .env
+.env.*
+!.env.example
 dist/
 .drizzle/
 outputs/
+coverage/
+*.log
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.db

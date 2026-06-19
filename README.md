@@ -7,172 +7,109 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white)](https://vercel.com/)
 
-> Frente de caixa web para pequenos e medios mercados, com base para emissao fiscal, controle operacional e evolucao futura como PWA.
+MouseForge PDV é uma aplicação full stack para gestão operacional de pequenos e médios mercados. O projeto combina frente de caixa, cadastro de produtos, controle de estoque, clientes, usuários, relatórios e uma base fiscal evolutiva para NFC-e/NF-e.
+
+> Projeto em evolução, criado para demonstrar arquitetura, produto e execução técnica em um cenário realista de varejo.
 
 ---
 
-## Sobre o Projeto
+## Visão Geral
 
-**MouseForge PDV** e uma aplicacao full stack criada para centralizar rotinas comuns de mercado em uma interface simples, rapida e preparada para crescer.
+O objetivo do MouseForge é entregar uma base enxuta e extensível para operações de ponto de venda, mantendo baixo custo inicial de infraestrutura e uma experiência web simples para operadores e administradores.
 
-O objetivo e atender operacoes de pequeno e medio porte com:
+Principais frentes do produto:
 
-- Login seguro para operadores e administradores
-- Frente de caixa para vendas no balcao
-- Controle de colaboradores por permissao
-- Base para estoque, financeiro e fiscal
-- Deploy acessivel usando Supabase e Vercel
-- Preparacao para instalacao PWA no futuro
-
----
-
-## Proposta de Valor
-
-### Operacao de Caixa
-
-Fluxo pensado para abertura de caixa, venda, formas de pagamento, sangria, suprimento e fechamento.
-
-### Fiscal no Radar
-
-Estrutura inicial voltada para evoluir ate NFC-e/NF-e, status de transmissao, contingencia e integracoes fiscais.
-
-### Controle do Mercado
-
-Base visual e tecnica para cadastro de produtos, codigos de barra, estoque, margens, reposicao e colaboradores.
-
-### Baixo Custo
-
-Projeto preparado para usar planos gratuitos no inicio: Supabase para PostgreSQL e Vercel para hospedagem web.
+- Autenticação com JWT e perfis de acesso.
+- Gestão de usuários por empresa e filial.
+- Cadastro e importação de produtos por CSV/planilha.
+- Controle de estoque com movimentações.
+- Registro de clientes e vendas.
+- Dashboard operacional com indicadores.
+- Configuração fiscal inicial por provedor.
+- Termos e aceite para rastreabilidade.
+- Exportação de dados operacionais.
+- Base PWA com manifesto e service worker.
 
 ---
 
-## Stack Tecnologica
+## Demonstração Técnica
+
+Este repositório foi preparado para exibição pública sem credenciais reais versionadas. Os arquivos `.env.example` usam apenas placeholders e o backend exige configuração explícita de `JWT_SECRET` e `DATABASE_URL`.
+
+Pontos de engenharia presentes no projeto:
+
+- Monorepo separado em `api` e `web`.
+- API HTTP com Fastify, TypeScript, Zod e Drizzle ORM.
+- Frontend React com Vite, Tailwind CSS e TanStack Query.
+- Banco PostgreSQL, com suporte direto a Supabase.
+- Hash de senhas com `scrypt`.
+- Escopo multiempresa e multifilial.
+- Auditoria de ações operacionais.
+- Versionamento semântico automatizado por hook local.
+
+---
+
+## Stack
 
 ### Backend
 
 | Tecnologia | Uso |
 | --- | --- |
 | Node.js | Runtime da API |
-| Fastify | Servidor HTTP leve e rapido |
-| TypeScript | Tipagem da API |
+| Fastify | Servidor HTTP |
+| TypeScript | Tipagem estática |
 | Drizzle ORM | Modelagem e acesso ao PostgreSQL |
 | PostgreSQL/Supabase | Banco de dados |
-| JWT | Autenticacao das rotas protegidas |
-| Zod | Validacao de payloads |
-| Crypto scrypt | Hash de senha sem depender de servico pago |
+| Zod | Validação de entradas |
+| JWT | Sessões e rotas protegidas |
+| Crypto scrypt | Hash de senhas |
 
 ### Frontend
 
 | Tecnologia | Uso |
 | --- | --- |
 | React 18 | Interface web |
-| Vite | Build e desenvolvimento |
+| Vite | Build e ambiente de desenvolvimento |
 | TypeScript | Tipagem do frontend |
-| Tailwind CSS | Estilizacao responsiva |
-| TanStack Query | Cache e sincronizacao com a API |
-| React Hook Form | Formularios |
-| Sonner | Notificacoes |
-| Lucide React | Icones |
+| Tailwind CSS | Estilização responsiva |
+| TanStack Query | Cache e sincronização com a API |
+| React Hook Form | Formulários |
+| Sonner | Notificações |
+| Lucide React | Ícones |
 
 ---
 
-## Funcionalidades Atuais
+## Funcionalidades
 
-- Login com JWT
-- Super usuario criado pelo ambiente ao iniciar a API
-- Senhas armazenadas com hash `scrypt`
-- Rotas de colaboradores protegidas
-- Permissoes iniciais por cargo: `admin`, `manager`, `cashier`
-- Lista e remocao de colaboradores
-- Tela inicial com blocos para caixa, fiscal, estoque e financeiro
-- Tema claro/escuro
-- Configuracao inicial para deploy na Vercel
-- Manifest e service worker basico para futura experiencia PWA
-
----
-
-## Quick Start
-
-### Pre-requisitos
-
-- Node.js 18+
-- Conta Supabase ou PostgreSQL local
-- npm
-
-### Backend
-
-```bash
-cd api
-npm install
-cp .env.example .env
-npx drizzle-kit push
-npm run dev
-```
-
-A API roda por padrao em:
-
-```text
-http://localhost:3333
-```
-
-### Frontend
-
-```bash
-cd web
-npm install
-cp .env.example .env
-npm run dev
-```
-
-O frontend roda por padrao em:
-
-```text
-http://localhost:5173
-```
+- Login por e-mail ou usuário.
+- Criação automática de superusuário via ambiente.
+- Perfis `admin`, `manager` e `cashier`.
+- Gestão de empresas, filiais e colaboradores.
+- Redefinição de senha por administrador.
+- Cadastro, edição, importação e exportação de produtos.
+- Controle de clientes.
+- Movimentações de estoque.
+- Venda com baixa automática de estoque.
+- Geração de documento fiscal pendente por venda.
+- Configuração fiscal por empresa ou filial.
+- Simulação de emissão fiscal em homologação.
+- Relatórios por período.
+- Dashboard com vendas, ticket médio, estoque crítico e pendências fiscais.
+- Termos de uso e aceite obrigatório.
+- Tema claro/escuro.
 
 ---
 
-## Variaveis de Ambiente
-
-### API
-
-```bash
-DATABASE_URL=postgresql://postgres:[SENHA]@[HOST]:5432/postgres
-JWT_SECRET=troque-por-um-segredo-grande
-CORS_ORIGIN=http://localhost:5173,https://seu-app.vercel.app
-PORT=3333
-
-SUPER_USER_NAME=Super Administrador
-SUPER_USER_EMAIL=admin@mouseforge.local
-SUPER_USER_USERNAME=admin
-SUPER_USER_PASSWORD=troque-essa-senha
-```
-
-Quando `SUPER_USER_EMAIL` e `SUPER_USER_PASSWORD` estiverem definidos, a API cria ou atualiza esse usuario como `admin` ao iniciar.
-
-### Web
-
-```bash
-VITE_API_URL=http://localhost:3333
-```
-
----
-
-## Arquitetura
+## Estrutura do Repositório
 
 ```text
 MouseForge/
 |-- api/
 |   |-- src/
 |   |   |-- auth/
-|   |   |   `-- password.ts
 |   |   |-- bootstrap/
-|   |   |   `-- super-user.ts
 |   |   |-- db/
-|   |   |   |-- index.ts
-|   |   |   `-- schema.ts
 |   |   |-- routes/
-|   |   |   `-- users.ts
 |   |   `-- server.ts
 |   |-- drizzle.config.ts
 |   |-- .env.example
@@ -180,8 +117,6 @@ MouseForge/
 |
 |-- web/
 |   |-- public/
-|   |   |-- manifest.webmanifest
-|   |   `-- sw.js
 |   |-- src/
 |   |   |-- hooks/
 |   |   |-- lib/
@@ -192,66 +127,78 @@ MouseForge/
 |   |-- vercel.json
 |   `-- package.json
 |
+|-- scripts/
+|-- ROADMAP.md
+|-- VERSION
 `-- README.md
 ```
 
 ---
 
-## Deploy
+## Pré-requisitos
 
-### Supabase
-
-1. Crie um projeto no Supabase.
-2. Copie a connection string PostgreSQL.
-3. Configure `DATABASE_URL` na API.
-4. Rode `npx drizzle-kit push` para aplicar o schema.
-
-### Vercel
-
-1. Publique a pasta `web`.
-2. Configure `VITE_API_URL` com a URL publica da API.
-3. O arquivo `web/vercel.json` ja redireciona rotas internas para o app React.
+- Node.js 18 ou superior.
+- npm.
+- PostgreSQL local ou projeto Supabase.
 
 ---
 
-## Roadmap
+## Configuração
 
-O roadmap tecnico e de produto esta documentado em [ROADMAP.md](./ROADMAP.md).
-
-- [ ] Cadastro completo de produtos
-- [ ] Leitura por codigo de barras
-- [ ] Carrinho e fluxo real de venda
-- [ ] Abertura, sangria, suprimento e fechamento de caixa
-- [ ] Controle de estoque e reposicao
-- [ ] Formas de pagamento
-- [ ] Emissao NFC-e/NF-e
-- [ ] Contingencia fiscal
-- [ ] Relatorios de vendas e margem
-- [ ] Fila offline e sincronizacao para PWA
-
----
-
-## Scripts
-
-## Versionamento
-
-O projeto usa versionamento semantico a partir de `0.0.0`, com commits convencionais:
-
-- `feat:` incrementa a versao minor. Exemplo: `0.8.0` para `0.9.0`.
-- `fix:` incrementa a versao patch. Exemplo: `0.8.0` para `0.8.1`.
-- `BREAKING CHANGE` ou `!:` incrementa a versao major.
-- `chore:`, `docs:`, `refactor:` e commits similares nao alteram a versao.
-
-A versao atual fica em `VERSION` e e sincronizada com `api`, `web` e as constantes exibidas no sistema. Para ativar o hook local:
+### 1. API
 
 ```bash
-git config core.hooksPath .githooks
+cd api
+npm install
+cp .env.example .env
 ```
 
-Tambem e possivel sincronizar manualmente:
+Edite `api/.env`:
 
 ```bash
-node scripts/update-version.cjs
+DATABASE_URL=postgresql://postgres:[SENHA]@[HOST]:5432/postgres
+JWT_SECRET=troque-por-um-segredo-longo-e-aleatorio
+CORS_ORIGIN=http://localhost:5173
+PORT=3333
+
+SUPER_USER_NAME=Super Administrador
+SUPER_USER_EMAIL=admin@mouseforge.local
+SUPER_USER_USERNAME=admin
+SUPER_USER_PASSWORD=troque-essa-senha
+```
+
+Depois aplique o schema e inicie a API:
+
+```bash
+npx drizzle-kit push
+npm run dev
+```
+
+A API roda por padrão em:
+
+```text
+http://localhost:3333
+```
+
+### 2. Web
+
+```bash
+cd web
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Edite `web/.env` se a API estiver em outra URL:
+
+```bash
+VITE_API_URL=http://localhost:3333
+```
+
+O frontend roda por padrão em:
+
+```text
+http://localhost:5173
 ```
 
 ---
@@ -277,6 +224,75 @@ npm run lint
 
 ---
 
+## Segurança
+
+- Não versionar arquivos `.env`.
+- Usar um `JWT_SECRET` longo, aleatório e diferente por ambiente.
+- Trocar `SUPER_USER_PASSWORD` antes de qualquer deploy público.
+- Configurar `CORS_ORIGIN` com domínios explícitos em produção.
+- Manter credenciais fiscais, certificados e segredos fora do repositório.
+- Revisar o histórico do Git antes de tornar o projeto público caso alguma credencial real já tenha sido commitada.
+
+---
+
+## Deploy
+
+### Supabase
+
+1. Crie um projeto PostgreSQL no Supabase.
+2. Copie a connection string do banco.
+3. Configure `DATABASE_URL` na API.
+4. Rode `npx drizzle-kit push` para aplicar o schema.
+
+### Vercel
+
+1. Publique a pasta `web`.
+2. Configure `VITE_API_URL` com a URL pública da API.
+3. O arquivo `web/vercel.json` redireciona rotas internas para o app React.
+
+---
+
+## Roadmap
+
+O roadmap técnico e de produto está documentado em [ROADMAP.md](./ROADMAP.md).
+
+Itens planejados:
+
+- Cadastro fiscal completo por produto.
+- Fluxo avançado de abertura e fechamento de caixa.
+- Integração real com provedores fiscais.
+- Contingência fiscal.
+- Relatórios gerenciais avançados.
+- Fila offline e sincronização para uso como PWA.
+- Testes automatizados de API e interface.
+
+---
+
+## Versionamento
+
+O projeto usa versionamento semântico a partir de `VERSION`, sincronizado com `api`, `web` e constantes exibidas no sistema.
+
+Regras do hook local:
+
+- `feat:` incrementa versão minor.
+- `fix:` incrementa versão patch.
+- `BREAKING CHANGE` ou `!:` incrementa versão major.
+- `chore:`, `docs:`, `refactor:` e similares não alteram versão.
+
+Para ativar o hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Para sincronizar manualmente:
+
+```bash
+node scripts/update-version.cjs
+```
+
+---
+
 ## Status
 
-Projeto em fase inicial, com fundacao de autenticacao, deploy e interface operacional pronta para receber os fluxos principais de PDV.
+Projeto em fase inicial funcional, com autenticação, gestão operacional, estoque, vendas, fiscal em homologação e interface administrativa prontos para evolução.

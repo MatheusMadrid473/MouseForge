@@ -14,11 +14,8 @@ function getInitialTheme(storageKey: string): Theme {
 
 export function useTheme(userKey?: string) {
   const storageKey = useMemo(() => (userKey ? `mouseforge:theme:${userKey}` : 'mouseforge:theme'), [userKey]);
-  const [theme, setTheme] = useState<Theme>(() => getInitialTheme(storageKey));
-
-  useEffect(() => {
-    setTheme(getInitialTheme(storageKey));
-  }, [storageKey]);
+  const [themeState, setThemeState] = useState(() => ({ storageKey, theme: getInitialTheme(storageKey) }));
+  const theme = themeState.storageKey === storageKey ? themeState.theme : getInitialTheme(storageKey);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -33,7 +30,7 @@ export function useTheme(userKey?: string) {
     localStorage.setItem('mouseforge:theme', theme);
   }, [storageKey, theme]);
 
-  const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  const toggleTheme = () => setThemeState({ storageKey, theme: theme === 'light' ? 'dark' : 'light' });
 
   return { theme, toggleTheme };
 }

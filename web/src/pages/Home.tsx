@@ -766,7 +766,7 @@ function ProductsView({ loggedUser }: { loggedUser: LoggedUser }) {
       } else {
         toast.success(`${response.data.imported} produtos importados.`);
       }
-    } catch (error) {
+    } catch {
       setImportMessage('');
       toast.error('Nao foi possivel importar a planilha.');
     }
@@ -2025,19 +2025,15 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
     enabled: !!loggedUser.isMaster,
   });
 
-  useEffect(() => {
-    if (!selectedTermId && termsList.length > 0) {
-      setSelectedTermId(termsList.find((term) => term.isActive)?.id || termsList[0].id);
-    }
-  }, [selectedTermId, termsList]);
+  const activeTermId = selectedTermId || termsList.find((term) => term.isActive)?.id || termsList[0]?.id || '';
 
   const { data: acceptanceReport, isLoading: isLoadingAcceptances } = useQuery<TermAcceptanceReport>({
-    queryKey: ['term-acceptances', selectedTermId],
+    queryKey: ['term-acceptances', activeTermId],
     queryFn: async () => {
-      const response = await api.get(`/terms/${selectedTermId}/acceptances`);
+      const response = await api.get(`/terms/${activeTermId}/acceptances`);
       return response.data;
     },
-    enabled: !!loggedUser.isMaster && !!selectedTermId,
+    enabled: !!loggedUser.isMaster && !!activeTermId,
   });
 
   const saveTerm = useMutation({
@@ -2147,7 +2143,7 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Auditoria de quem aceitou ou ainda precisa aceitar o termo selecionado.</p>
           </div>
           <select
-            value={selectedTermId}
+            value={activeTermId}
             onChange={(event) => setSelectedTermId(event.target.value)}
             className="min-h-[44px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-950 outline-none focus:ring-2 focus:ring-brand-600 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
           >
@@ -2230,7 +2226,8 @@ function TermsView({ loggedUser }: { loggedUser: LoggedUser }) {
 }
 
 function TermsAcceptanceGate() {
-  const [pendingTerms, setPendingTerms] = useState<LegalTerm[]>(() => JSON.parse(localStorage.getItem('mouseforge:pending-terms') || '[]'));
+  const cachedPendingTerms = useMemo<LegalTerm[]>(() => JSON.parse(localStorage.getItem('mouseforge:pending-terms') || '[]'), []);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const { data } = useQuery<LegalTerm[]>({
     queryKey: ['pending-terms'],
@@ -2240,9 +2237,10 @@ function TermsAcceptanceGate() {
     },
   });
 
+  const pendingTerms = termsAccepted ? [] : data ?? cachedPendingTerms;
+
   useEffect(() => {
     if (data) {
-      setPendingTerms(data);
       localStorage.setItem('mouseforge:pending-terms', JSON.stringify(data));
     }
   }, [data]);
@@ -2252,7 +2250,7 @@ function TermsAcceptanceGate() {
       await Promise.all(pendingTerms.map((term) => api.post(`/terms/${term.id}/accept`)));
     },
     onSuccess: () => {
-      setPendingTerms([]);
+      setTermsAccepted(true);
       localStorage.setItem('mouseforge:pending-terms', '[]');
       toast.success('Termos aceitos com sucesso.');
     },
